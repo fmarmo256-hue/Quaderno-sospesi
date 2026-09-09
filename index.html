@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quaderno dei Sospesi</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  :root{
+    --paper:#efe8d8; --paper-line:#d9cfb4; --ink:#262320; --ink-soft:#6b6555;
+    --red:#a23b2e; --green:#3f5e4a; --gold:#a9822f;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family: Georgia, 'Times New Roman', serif; color:var(--ink); background:var(--paper);
+    margin:0; padding:28px 20px 60px;
+  }
+  .mono{font-family:'Courier New', monospace;}
+  .text-red{color:var(--red);} .text-green{color:var(--green);}
+  .topbar{display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--ink); padding-bottom:14px; margin-bottom:18px; flex-wrap:wrap; gap:12px;}
+  .brand h1{font-size:26px; margin:0;}
+  .brand .sub{font-size:12px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em;}
+  .tallies{text-align:right; background:#fffdf7; border:1px solid var(--paper-line); border-radius:4px; padding:12px 18px;}
+  .dash-grid{display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;}
+  .dash-box{background:#fffdf7; border:1px solid var(--paper-line); border-radius:4px; padding:12px 18px; flex:1; min-width:170px;}
+  .dash-box .label{display:block; font-size:11px; text-transform:uppercase; color:var(--ink-soft); letter-spacing:.06em; margin-bottom:4px;}
+  .dash-box .value{font-size:26px; font-weight:bold;}
+  .dash-box.warn .value{color:var(--red);}
+  .dash-box.ok .value{color:var(--green);}
+  .overdue-panel{background:#fbf1e4; border:1px solid var(--gold); border-radius:4px; padding:10px 16px; margin-bottom:14px;}
+  .overdue-panel-head{display:flex; justify-content:space-between; align-items:center; cursor:pointer;}
+  .overdue-panel-head h3{margin:0; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft);}
+  .overdue-row{display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-top:1px solid var(--paper-line); font-size:14px; cursor:pointer; margin-top:8px;}
+  .due-badge{font-family:'Courier New',monospace; font-size:11px; font-weight:bold; border-radius:10px; padding:3px 9px; white-space:nowrap; border:1px solid transparent; display:inline-block; min-width:118px; text-align:center; line-height:1.4;}
+  .due-badge-ok{color:#fff; background:var(--green);}
+  .due-badge-mid{color:#3a2c0d; background:#e9c874; border-color:#c9a24a;}
+  .due-badge-late{color:#fff; background:var(--red);}
+  .due-badge-none{color:#fff; background:var(--red);}
+  .sort-carousel{position:relative; margin-bottom:14px; display:inline-block;}
+  .sort-label{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); margin-bottom:5px; display:block;}
+  .sort-toggle{font-family:'Courier New',monospace; font-size:13px; padding:9px 14px; border-radius:4px; border:1px solid var(--paper-line); background:#fffdf7; color:var(--ink); cursor:pointer; display:flex; align-items:center; gap:8px; min-width:220px; justify-content:space-between;}
+  .sort-menu{position:absolute; top:100%; left:0; margin-top:4px; background:#fffdf7; border:1px solid var(--paper-line); border-radius:4px; box-shadow:0 6px 16px rgba(38,35,32,0.15); min-width:220px; z-index:20; overflow:hidden;}
+  .sort-menu-item{display:block; width:100%; text-align:left; padding:10px 14px; font-family:'Courier New',monospace; font-size:13px; background:none; border:none; border-top:1px solid var(--paper-line); cursor:pointer; color:var(--ink);}
+  .sort-menu-item:first-child{border-top:none;}
+  .sort-menu-item.active{background:var(--ink); color:#fdf8ec;}
+  .type-pill{font-family:'Courier New',monospace; font-size:10px; font-weight:bold; border-radius:3px; padding:2px 6px; color:#fff;}
+  .type-pill-dilazione{background:var(--gold);}
+  .type-pill-finanziamento{background:#3a6ea5;}
+  .bonifico-tag{font-size:13px;}
+  .field-label{display:block; font-family:'Courier New', monospace; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-soft); margin:10px 0 4px;}
+  .field-input, input, select{width:100%; box-sizing:border-box; background:#fffdf7; border:1px solid var(--paper-line); border-radius:3px; padding:9px 11px; font-family:inherit; font-size:15px; color:var(--ink);}
+  .btn{font-family:'Courier New',monospace; font-size:13px; padding:9px 16px; border-radius:3px; border:1px solid transparent; cursor:pointer; background:var(--ink); color:#fdf8ec;}
+  .btn.secondary{background:none; border-color:var(--paper-line); color:var(--ink-soft);}
+  .btn.danger{color:var(--red); background:none; border-color:var(--red);}
+  .btn.small{padding:6px 10px; font-size:12px;}
+  .panel{background:#fffdf7; border:1px solid var(--paper-line); border-radius:4px; padding:20px; margin-bottom:18px;}
+  .field-row{display:flex; gap:16px; flex-wrap:wrap; margin-bottom:6px;}
+  .field{flex:1; min-width:160px;}
+  .field-check{display:flex; align-items:center; gap:8px; margin:10px 0;}
+  .field-check input{width:auto;}
+  .panel-actions{display:flex; justify-content:flex-end; gap:10px; margin-top:14px;}
+  .error-msg{color:var(--red); font-size:13px; margin-top:8px;}
+  .stamp{display:inline-block; font-family:'Courier New',monospace; font-size:11px; font-weight:bold; letter-spacing:.1em; padding:4px 10px; border:2px solid currentColor; border-radius:3px; transform:rotate(-4deg);}
+  .ledger-sheet{display:flex; flex-direction:column; gap:6px;}
+  .empty-state{color:var(--ink-soft); font-size:14px; padding:30px 0; text-align:center;}
+  .row-btn{position:relative; overflow:hidden; display:flex; justify-content:space-between; align-items:center; gap:12px; width:100%; text-align:left; background:#fffdf7; border:1px solid var(--paper-line); border-left:4px solid var(--gold); padding:12px 14px; border-radius:3px; cursor:pointer;}
+  .row-btn:hover{background:#f7f2e6;}
+  .corner-bonifico{position:absolute; top:0; left:0; width:0; height:0; border-top:30px solid #6a3fa0; border-right:30px solid transparent;}
+  .corner-bonifico-icon{position:absolute; top:2px; left:2px; font-size:12px; line-height:1;}
+  .row-nome{font-weight:bold; font-size:15px; display:block;}
+  .row-side{display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end;}
+  .row-amt{font-size:15px; min-width:80px; text-align:right;}
+  .meta-line{font-size:13px; color:var(--ink-soft);}
+  .back-link{display:inline-block; margin-bottom:14px; cursor:pointer; color:var(--ink-soft); font-family:'Courier New',monospace; font-size:13px;}
+  .sospeso-card{background:#fffdf7; border:1px solid var(--paper-line); border-left:4px solid var(--gold); border-radius:3px; padding:14px; margin-bottom:10px;}
+  .sospeso-card.tipo-finanziamento{border-left-color:#3a6ea5;}
+  .sospeso-section{margin-bottom:20px;}
+  .sospeso-section-head{display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid var(--ink); padding-bottom:6px; margin-bottom:10px;}
+  .sospeso-section-head h3{margin:0; font-size:14px; text-transform:uppercase; letter-spacing:.04em;}
+  .sospeso-columns{display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;}
+  .sospeso-columns .sospeso-section{flex:1; min-width:260px; margin-bottom:0;}
+  .sospeso-section-empty{color:var(--ink-soft); font-size:13px; padding:14px; text-align:center; border:1px dashed var(--paper-line); border-radius:3px;}
+  .sospeso-head{display:flex; justify-content:space-between; align-items:flex-start;}
+  .saldo-row{display:flex; justify-content:space-between; align-items:center; margin:10px 0; font-size:13px; text-transform:uppercase; color:var(--ink-soft); background:#f3ead2; border-radius:3px; padding:10px 14px;}
+  .saldo-row .val{font-size:24px; font-weight:bold;}
+  .saldo-row.big{padding:14px 18px;} .saldo-row.big .val{font-size:28px;}
+  .progress-bar-outer{height:8px; background:#e5ddc7; border-radius:4px; overflow:hidden; margin:2px 0 12px;}
+  .progress-bar-inner{height:100%; background:var(--green);}
+  .sospeso-stats{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--ink-soft); margin-bottom:10px;}
+  .sospeso-stats b{color:var(--ink); font-family:'Courier New',monospace;}
+  .foto-bolla{margin:10px 0;}
+  .foto-thumb{display:block; max-width:110px; max-height:110px; border:1px solid var(--paper-line); border-radius:3px; cursor:zoom-in; margin-bottom:6px;}
+  .pag-list-title{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-soft); margin-top:12px; margin-bottom:2px;}
+  .pag-line{display:grid; grid-template-columns:120px 90px 1fr auto; align-items:center; gap:8px; padding:5px 0; border-top:1px solid var(--paper-line);}
+  .pag-line input[type=date], .pag-line select{font-size:12px; padding:4px 6px; border:1px solid transparent; background:transparent; color:var(--ink-soft);}
+  .pag-line input[type=date]:hover, .pag-line select:hover{border-color:var(--paper-line); background:#fffdf7;}
+  .pag-line .rm{color:var(--red); cursor:pointer; font-size:12px;}
+  .mini-form{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:flex-end;}
+  .mini-form .mf-field{display:flex; flex-direction:column; gap:3px;}
+  .mini-form .mf-field label{font-size:10px; text-transform:uppercase; color:var(--ink-soft);}
+  .mini-form input, .mini-form select{min-width:100px;}
+  .login-wrap{min-height:70vh; display:flex; align-items:center; justify-content:center;}
+  .login-card{background:#fffdf7; border:1px solid var(--paper-line); border-radius:6px; padding:32px; max-width:360px; width:100%; text-align:center;}
+  .print-only{display:none;}
+  @media print {
+    body > *:not(#printArea){display:none !important;}
+    #printArea{display:block !important; padding:0; background:#fff;}
+    #printArea h1{font-size:20px; margin-bottom:2px;}
+    #printArea h2{font-size:15px; margin:16px 0 6px; border-bottom:1px solid #999; padding-bottom:4px;}
+    .print-row{display:flex; justify-content:space-between; padding:3px 0; font-size:13px; border-bottom:1px solid #ddd;}
+    .print-total{font-weight:bold; font-size:16px; margin-top:8px;}
+  }
+</style>
+</head>
+<body>
+<div id="root">Caricamento registro...</div>
+<script>
+(function(){
+  var SUPABASE_URL = 'https://byetslqxrqvokxtgnsoo.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_z7YTYJl_oUWMPud0EZwxDg_DaxsRqTG';
+  var sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  var LOGO_B64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAAA5CAMAAACGeNCUAAAMTWlDQ1BJQ0MgUHJvZmlsZQAAeJyVVwdYU8kWnltSIQQIREBK6E0QkRJASggt9I4gKiEJEEqMCUHFjiyu4NpFBMuKrlIU2wrIYkNddWVR7H2xoKKsi+tiV96EALrsK9+b75s7//3nzD/nnJlbBgB6F18qzUU1AciT5Mtig/1Zk5NTWKQeQAGaAANMYMkXyKWc6OhwAMtw+/fy+hpAlO1lB6XWP/v/a9ESiuQCAJBoiNOFckEexD8CgLcKpLJ8AIhSyJvPypcq8TqIdWTQQYhrlDhThVuVOF2FLw7axMdyIX4EAFmdz5dlAqDRB3lWgSAT6tBhtMBJIhRLIPaD2Ccvb4YQ4kUQ20AbOCddqc9O/0on82+a6SOafH7mCFbFMljIAWK5NJc/5/9Mx/8uebmK4TmsYVXPkoXEKmOGeXuUMyNMidUhfitJj4yCWBsAFBcLB+2VmJmlCElQ2aM2AjkX5gyuMkAnyXPjeEN8rJAfEAaxIcQZktzI8CGbogxxkNIG5g+tEOfz4iHWg7hGJA+MG7I5LpsROzzvtQwZlzPEP+XLBn1Q6n9W5CRwVPqYdpaIN6SPORZmxSdBTIU4oECcGAmxBsSR8py4sCGb1MIsbuSwjUwRq4zFAmKZSBLsr9LHyjNkQbFD9nV58uHYseNZYl7kEL6UnxUfosoV9kjAH/QfxoL1iSSchGEdkXxy+HAsQlFAoCp2nCySJMSpeFxPmu8fqxqL20lzo4fscX9RbrCSN4M4Xl4QNzy2IB9uTpU+XiLNj45X+YlXZvNDo1X+4PtAOOCCAMACCljTwQyQDcQdvU298E7VEwT4QAYygQg4DDHDI5IGeyTwGgcKwe8QiYB8ZJz/YK8IFED+0yhWyYlHONXVAWQM9SlVcsBjiPNAGMiF94pBJcmIB4ngEWTE//CID6sAxpALq7L/3/PD7BeGA5nwIUYxPCOLPmxJDCQGEEOIQURb3AD3wb3wcHj1g9UZZ+Mew3F8sSc8JnQSHhCuEroIN6eLi2SjvIwAXVA/aCg/6V/nB7eCmq64P+4N1aEyzsQNgAPuAufh4L5wZlfIcof8VmaFNUr7bxF8tUJDdhQnCkoZQ/Gj2IweqWGn4Tqiosz11/lR+Zo+km/uSM/o+blfZV8I27DRlti32EHsDHYCO4e1Yk2AhR3DmrF27IgSj+y4R4M7bni22EF/cqDO6D3zZWWVmZQ71Tv1OH1U9eWLZucrH0buDOkcmTgzK5/FgV8MEYsnETiOYzk7ObsCoPz+qF5vr2IGvysIs/0Lt+Q3ALyPDQwM/PSFCz0GwH53+Eo4/IWzYcNPixoAZw8LFLICFYcrLwT45qDDp08fGANzYAPjcQZuwAv4gUAQCqJAPEgG06D3WXCfy8AsMA8sBiWgDKwC60El2Aq2gxqwBxwATaAVnAA/g/PgIrgKbsPd0w2egz7wGnxAEISE0BAGoo+YIJaIPeKMsBEfJBAJR2KRZCQNyUQkiAKZhyxBypA1SCWyDalF9iOHkRPIOaQTuYncR3qQP5H3KIaqozqoEWqFjkfZKAcNQ+PRqWgmOhMtRIvRFWgFWo3uRhvRE+h59CrahT5H+zGAqWFMzBRzwNgYF4vCUrAMTIYtwEqxcqwaa8Ba4DpfxrqwXuwdTsQZOAt3gDs4BE/ABfhMfAG+HK/Ea/BG/BR+Gb+P9+GfCTSCIcGe4EngESYTMgmzCCWEcsJOwiHCafgsdRNeE4lEJtGa6A6fxWRiNnEucTlxM3Ev8Tixk/iQ2E8ikfRJ9iRvUhSJT8onlZA2knaTjpEukbpJb8lqZBOyMzmInEKWkIvI5eQ68lHyJfIT8geKJsWS4kmJoggpcygrKTsoLZQLlG7KB6oW1ZrqTY2nZlMXUyuoDdTT1DvUV2pqamZqHmoxamK1RWoVavvUzqrdV3unrq1up85VT1VXqK9Q36V+XP2m+isajWZF86Ol0PJpK2i1tJO0e7S3GgwNRw2ehlBjoUaVRqPGJY0XdArdks6hT6MX0svpB+kX6L2aFE0rTa4mX3OBZpXmYc3rmv1aDK0JWlFaeVrLteq0zmk91SZpW2kHagu1i7W3a5/UfsjAGOYMLkPAWMLYwTjN6NYh6ljr8HSydcp09uh06PTpauu66Cbqztat0j2i28XEmFZMHjOXuZJ5gHmN+X6M0RjOGNGYZWMaxlwa80ZvrJ6fnkivVG+v3lW99/os/UD9HP3V+k36dw1wAzuDGINZBlsMThv0jtUZ6zVWMLZ07IGxtwxRQzvDWMO5htsN2w37jYyNgo2kRhuNThr1GjON/YyzjdcZHzXuMWGY+JiITdaZHDN5xtJlcVi5rArWKVafqaFpiKnCdJtph+kHM2uzBLMis71md82p5mzzDPN15m3mfRYmFhEW8yzqLW5ZUizZllmWGyzPWL6xsrZKslpq1WT11FrPmmddaF1vfceGZuNrM9Om2uaKLdGWbZtju9n2oh1q52qXZVdld8EetXezF9tvtu8cRxjnMU4yrnrcdQd1B45DgUO9w31HpmO4Y5Fjk+OL8RbjU8avHn9m/GcnV6dcpx1OtydoTwidUDShZcKfznbOAucq5ysTaRODJi6c2DzxpYu9i8hli8sNV4ZrhOtS1zbXT27ubjK3Brcedwv3NPdN7tfZOuxo9nL2WQ+Ch7/HQo9Wj3eebp75ngc8//By8MrxqvN6Osl6kmjSjkkPvc28+d7bvLt8WD5pPt/7dPma+vJ9q30f+Jn7Cf12+j3h2HKyObs5L/yd/GX+h/zfcD2587nHA7CA4IDSgI5A7cCEwMrAe0FmQZlB9UF9wa7Bc4OPhxBCwkJWh1znGfEEvFpeX6h76PzQU2HqYXFhlWEPwu3CZeEtEWhEaMTaiDuRlpGSyKYoEMWLWht1N9o6emb0TzHEmOiYqpjHsRNi58WeiWPETY+ri3sd7x+/Mv52gk2CIqEtkZ6Ymlib+CYpIGlNUtfk8ZPnTz6fbJAsTm5OIaUkpuxM6Z8SOGX9lO5U19SS1GtTrafOnnpumsG03GlHptOn86cfTCOkJaXVpX3kR/Gr+f3pvPRN6X0CrmCD4LnQT7hO2CPyFq0RPcnwzliT8TTTO3NtZk+Wb1Z5Vq+YK64Uv8wOyd6a/SYnKmdXzkBuUu7ePHJeWt5hibYkR3JqhvGM2TM6pfbSEmnXTM+Z62f2ycJkO+WIfKq8OV8H/ui3K2wU3yjuF/gUVBW8nZU46+BsrdmS2e1z7OYsm/OkMKjwh7n4XMHctnmm8xbPuz+fM3/bAmRB+oK2heYLixd2LwpeVLOYujhn8a9FTkVriv5akrSkpdioeFHxw2+Cv6kv0SiRlVxf6rV067f4t+JvO5ZNXLZx2edSYekvZU5l5WUflwuW//LdhO8qvhtYkbGiY6Xbyi2riKskq66t9l1ds0ZrTeGah2sj1jauY60rXffX+unrz5W7lG/dQN2g2NBVEV7RvNFi46qNHyuzKq9W+Vft3WS4admmN5uFmy9t8dvSsNVoa9nW99+Lv7+xLXhbY7VVdfl24vaC7Y93JO448wP7h9qdBjvLdn7aJdnVVRNbc6rWvba2zrBuZT1ar6jv2Z26++KegD3NDQ4N2/Yy95btA/sU+57tT9t/7UDYgbaD7IMNP1r+uOkQ41BpI9I4p7GvKaupqzm5ufNw6OG2Fq+WQz85/rSr1bS16ojukZVHqUeLjw4cKzzWf1x6vPdE5omHbdPbbp+cfPLKqZhTHafDTp/9Oejnk2c4Z46d9T7bes7z3OFf2L80nXc739ju2n7oV9dfD3W4dTRecL/QfNHjYkvnpM6jl3wvnbgccPnnK7wr569GXu28lnDtxvXU6103hDee3sy9+fJWwa0PtxfdIdwpvat5t/ye4b3q32x/29vl1nXkfsD99gdxD24/FDx8/kj+6GN38WPa4/InJk9qnzo/be0J6rn4bMqz7ufS5x96S37X+n3TC5sXP/7h90d73+S+7peylwN/Ln+l/2rXXy5/tfVH9997nff6w5vSt/pva96x3515n/T+yYdZH0kfKz7Zfmr5HPb5zkDewICUL+MP/gpgQHm0yQDgz10A0JIBYMBzI3WK6nw4WBDVmXYQgf+EVWfIweIGQAP8p4/phX831wHYtwMAK6hPTwUgmgZAvAdAJ04cqcNnucFzp7IQ4dng+8BP6Xnp4N8U1Zn0K79Ht0Cp6gJGt/8CAfODACdlh1kAAAA/UExURf39/aUtKhUxXrVWVdakozFKcFdsipGfs6u2xcR6eXWGn7rD0ENafHYgIqtBPsZ/gAAAAAAAAAAAAAAAAAAAAK68Mg8AAAAQdFJOU//////////////////////NIbKUAAADiklEQVR42u1X15ajMAwFy40S5v//dq3mEmDCTMJZ9ix6CEK2patq0nX/GUHf24vjuzbC/uoALx7BoWcCe+UEE8KLArQXx5dKkOmyRXj5CFprq8el2nfpF+D+BWsXZOBCzZymy4B4+oqAMdq/l0siGc7pSXVXz0GLEhCEzf4TQQE0UeJ2IBDQlzaRzFqW29w6SgvA8Hmsz8iEBEfXD3lYF852jHz37BkTZBVAnillspSyY24jhOfMos0wDAoDYPU9aMvKJkD70fIbYMeI7QVN5QazX71IdgCmC8eeCE3TpMj6r/y9oBmG7wG+DRObtn9BkGsOMh4NqSyQEy/1/LStLSz9IcoDRmtPAeo7ViIc0/WTjwx7UGfqEptDZ1uggg++zfBvAaLqYTkaQhl4PBCptRvhcAjdbyrxSHK4woD7V0Ze/QLdESVvtPNOsrH5bP2V2g3ll+5E/c335LDTc29/82xk+vFoPmbgG6qtw+OMeW3X6BLB62t6bZ9OPj59JfcvL9KjEUwz/YQ7GZ5Kb2Oi2mGX7HBg/n8owQnaR2/3AhPeTfACJ30K60X/1pA5/w9aQtnddNO/QMHN5cWFZm10znkSRY9sJOHsEyHnieaQdHiV0anEBdI6zY7OBDw+0uo8R7GrZ1D32EhagMYUQMbVS84QBdqkbOeZTVwWhiwi3KglGLLdHBlZEmUXkiNJIo/Way2bAB3rE5rT+ZCCyDrGgAoi2R89afTemeR1TDqcH7PvAlCMB7LsQgpi1wLEMyMxycpE4WHJLsBkpwphJBDqbcwSsu95ozxC47cARF0TATSt1thVR4mZtvK3AdBpFmV/teCLUvQ4iCQDdE6qrYqgMXNAfRzGGBK1ANMZhmyoLjHQs4DdBIja5uJF5ZAzYxHl4mkiWLmmAH2p0Ji9f6rBiZqD65NrMO4DRHCh7AjFpGbeSQS9LhWAYYpPKTaMO2CePUbQPwF0Uc8gRHK/0lIDjFodLlV9LjwsHWzgQN56dpqLOiMuAKdVDSYRFmLIvecRRXzyDTkBMZp1fqUzTEmdKbYwAI6VO+QcJxY1awOVGlyPGdTDWZhEEbo38daIu9iuY9UUQWPWjaIzjBNR9y4Xh6Hi9zqsJBC+Ckq3PQe5vmjb5Oo5qACllIMa2ZmDXSTCJ71OsSqD1HryNqUenPQA/UyZLzoqDbqSFYXWXHVGjTRabrrppptuujj9AZK2HNpGPwwBAAAAAElFTkSuQmCC';
+
+  var uid = function(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); };
+  var todayISO = function(){ return new Date().toISOString().slice(0,10); };
+  var fmtEUR = function(n){ return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(n||0); };
+  var fmtDate = function(iso){ if(!iso) return ''; var p=iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
+  var escapeHtml = function(s){ return (s||'').toString().replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+  var giorniDa = function(iso){ if(!iso) return null; var d1=new Date(iso+'T00:00:00'); var d0=new Date(todayISO()+'T00:00:00'); return Math.round((d0-d1)/86400000); };
+
+  var root = document.getElementById('root');
+  var settings = { dilazioneMidGiorni:5, dilazioneLateGiorni:10, finanziamentoMidGiorni:30, finanziamentoLateGiorni:40 };
+  var TIPI_SOLLECITO = { telefonata:'Telefonata', messaggio:'Messaggio/SMS', whatsapp:'WhatsApp', email:'Email', persona:'Di persona' };
+  var ESITI_SOLLECITO = { risposto:'Ha risposto', non_risposto:'Non ha risposto', richiamera:'Richiamer\u00e0 lui/lei', promesso:'Promesso pagamento' };
+  var METODI = { contanti:'Contanti', carta:'Carta', bonifico:'Bonifico', altro:'Altro' };
+
+  var state = {
+    view: 'login',
+    session: null,
+    profile: null,
+    loginError: '',
+    clienti: [], sospesi: [], solleciti: [],
+    selectedClienteId: null,
+    formClienteOpen: false, formClienteAltriOpen: false,
+    formClienteDraft: { nome:'', cognome:'', telefono:'', paese:'', indirizzo:'', fatturazione:'', note:'' },
+    formSospesoOpen: false, formHasScadenza: false,
+    formSospesoDraft: { descrizione:'', importo:'', dataApertura:'', scadenza:'', tipo:'dilazione', bonifico:false, nota:'' },
+    editSospesoId: null,
+    editSospesoDraft: { descrizione:'', importo:'', dataApertura:'', scadenza:'', hasScadenza:false, tipo:'dilazione', bonifico:false, nota:'' },
+    editClienteOpen: false,
+    search: '', filter: 'tutti', sortBy: 'apertura_asc', sortMenuOpen: false,
+    viewMode: 'per-tipo', viewMenuOpen: false,
+    overduePanelOpen: false, authError: ''
+  };
+
+  function nomeCompleto(c){ return (c.nome||'')+(c.cognome?' '+c.cognome:''); }
+  function isAdmin(){ return !!(state.profile && state.profile.is_admin); }
+  function currentName(){ return state.profile ? state.profile.nome : ''; }
+
+  // ---------- mappatura righe database <-> oggetti app ----------
+  function mapCliente(r){ return { id:r.id, nome:r.nome||'', cognome:r.cognome||'', telefono:r.telefono||'', paese:r.paese||'', indirizzo:r.indirizzo||'', fatturazione:r.fatturazione||'', note:r.note||'', creatoDa:r.creato_da||'', createdAt:r.created_at }; }
+  function mapPagamento(r){ return { id:r.id, importo:Number(r.importo), data:r.data, metodo:r.metodo||'' }; }
+  function mapSospeso(r){ return { id:r.id, clienteId:r.cliente_id, descrizione:r.descrizione||'', nota:r.nota||'', tipo:r.tipo||'dilazione', dataApertura:r.data_apertura, scadenza:r.scadenza, importoIniziale:Number(r.importo_iniziale), bonifico:!!r.bonifico, creatoDa:r.creato_da||'', pagamenti:(r.pagamenti||[]).map(mapPagamento) }; }
+  function mapSollecito(r){ return { id:r.id, clienteId:r.cliente_id, data:r.data, tipo:r.tipo, esito:r.esito, nota:r.nota||'' }; }
+
+  // ---------- persistenza (Supabase) ----------
+  async function loadAll(){
+    var c = await sb.from('clienti').select('*').order('created_at',{ascending:false});
+    state.clienti = (c.data||[]).map(mapCliente);
+    var s = await sb.from('sospesi').select('*, pagamenti(*)').order('created_at',{ascending:false});
+    state.sospesi = (s.data||[]).map(mapSospeso);
+    var so = await sb.from('solleciti').select('*').order('data',{ascending:false});
+    state.solleciti = (so.data||[]).map(mapSollecito);
+    var imp = await sb.from('impostazioni').select('*').eq('id',1).maybeSingle();
+    if(imp.data){
+      settings = {
+        dilazioneMidGiorni: imp.data.dilazione_mid_giorni,
+        dilazioneLateGiorni: imp.data.dilazione_late_giorni,
+        finanziamentoMidGiorni: imp.data.finanziamento_mid_giorni,
+        finanziamentoLateGiorni: imp.data.finanziamento_late_giorni
+      };
+    }
+  }
+  async function saveSettings(){
+    await sb.from('impostazioni').update({
+      dilazione_mid_giorni: settings.dilazioneMidGiorni,
+      dilazione_late_giorni: settings.dilazioneLateGiorni,
+      finanziamento_mid_giorni: settings.finanziamentoMidGiorni,
+      finanziamento_late_giorni: settings.finanziamentoLateGiorni
+    }).eq('id',1);
+  }
+
+  // ---------- calcoli ----------
+  function saldoSospeso(s){ var pagato=(s.pagamenti||[]).reduce(function(a,p){return a+p.importo;},0); return Math.max(s.importoIniziale-pagato,0); }
+  function saldoCliente(clienteId){ return state.sospesi.filter(function(s){return s.clienteId===clienteId;}).reduce(function(a,s){return a+saldoSospeso(s);},0); }
+  function ultimoPagamentoSospeso(s){ if(!s.pagamenti||!s.pagamenti.length) return null; return s.pagamenti.reduce(function(max,p){return (!max||p.data>max)?p.data:max;},null); }
+  function rankLivello(l){ return l==='late'?2:(l==='mid'?1:0); }
+  function statoSospeso(s){
+    var saldo = saldoSospeso(s);
+    if(saldo<=0) return null;
+    if(s.tipo==='finanziamento'){
+      var ultimo = ultimoPagamentoSospeso(s);
+      var rif = ultimo || s.dataApertura;
+      var giorni = giorniDa(rif);
+      var livello = giorni>settings.finanziamentoLateGiorni?'late':(giorni>settings.finanziamentoMidGiorni?'mid':'ok');
+      var testo = ultimo ? 'ultimo pagamento '+giorni+' gg fa' : 'mai pagato \u00b7 aperto da '+giorni+' gg';
+      return { giorni:giorni, livello:livello, testo:testo };
+    }
+    var giorni, livello, testo;
+    if(s.scadenza){
+      giorni = giorniDa(s.scadenza);
+      if(giorni>0){ livello='late'; testo='scaduto da '+giorni+' gg'; }
+      else if(giorni>=-2){ livello='mid'; testo = giorni===0?'scade oggi':'scade tra '+(-giorni)+' gg'; }
+      else { livello='ok'; testo='scade tra '+(-giorni)+' gg'; }
+    } else {
+      var giorniAp = giorniDa(s.dataApertura);
+      if(giorniAp>settings.dilazioneLateGiorni){ livello='late'; giorni=giorniAp; testo='aperto da '+giorniAp+' gg (oltre '+settings.dilazioneLateGiorni+'gg)'; }
+      else if(giorniAp>settings.dilazioneMidGiorni){ livello='mid'; giorni=giorniAp; testo='aperto da '+giorniAp+' gg (oltre '+settings.dilazioneMidGiorni+'gg)'; }
+      else { livello='ok'; giorni=giorniAp; testo='aperto da '+giorniAp+' gg'; }
+    }
+    return { giorni:giorni, livello:livello, testo:testo };
+  }
+  function statoClienteAggregato(clienteId){
+    var aperti = state.sospesi.filter(function(s){return s.clienteId===clienteId && saldoSospeso(s)>0;});
+    var peggior = null;
+    aperti.forEach(function(s){ var st=statoSospeso(s); if(!st) return; if(!peggior||rankLivello(st.livello)>rankLivello(peggior.livello)) peggior=st; });
+    return peggior;
+  }
+  function tipiClienteAperti(clienteId){
+    var aperti = state.sospesi.filter(function(s){return s.clienteId===clienteId && saldoSospeso(s)>0;});
+    return { dilazione: aperti.some(function(s){return s.tipo!=='finanziamento';}), finanziamento: aperti.some(function(s){return s.tipo==='finanziamento';}) };
+  }
+  function haBonificoAtteso(clienteId){ return state.sospesi.some(function(s){return s.clienteId===clienteId && saldoSospeso(s)>0 && s.bonifico;}); }
+  function clsEsito(esito){ return (esito==='non_risposto')?'due-badge-late':(esito==='richiamera'?'due-badge-mid':'due-badge-ok'); }
+  function ultimoSollecitoDettaglio(clienteId){
+    var arr = state.solleciti.filter(function(s){return s.clienteId===clienteId;});
+    if(!arr.length) return null;
+    return arr.reduce(function(max,s){return (!max||s.data>max.data)?s:max;},null);
+  }
+  function ultimoSollecitoData(clienteId){ var d=ultimoSollecitoDettaglio(clienteId); return d?d.data:null; }
+  function primoSospesoCliente(clienteId){
+    var arr = state.sospesi.filter(function(s){return s.clienteId===clienteId;});
+    if(!arr.length) return null;
+    return arr.reduce(function(min,s){return (!min||s.dataApertura<min)?s.dataApertura:min;},null);
+  }
+  function ultimoPagamentoCliente(clienteId){
+    var arr = [];
+    state.sospesi.filter(function(s){return s.clienteId===clienteId;}).forEach(function(s){(s.pagamenti||[]).forEach(function(p){arr.push(p);});});
+    if(!arr.length) return null;
+    return arr.reduce(function(max,p){return (!max||p.data>max)?p.data:max;},null);
+  }
+
+  var CRITERI_ORDINE = [
+    { key:'saldo_desc', label:'Saldo pi\u00f9 alto' },
+    { key:'saldo_asc', label:'Saldo pi\u00f9 basso' },
+    { key:'nome_asc', label:'Nome A \u2192 Z' },
+    { key:'nome_desc', label:'Nome Z \u2192 A' },
+    { key:'ultimo_pagamento_asc', label:'Non paga da pi\u00f9 tempo' },
+    { key:'ultimo_pagamento_desc', label:'Pagamento pi\u00f9 recente' },
+    { key:'apertura_asc', label:'Sospeso pi\u00f9 vecchio' },
+    { key:'apertura_desc', label:'Sospeso pi\u00f9 recente' },
+    { key:'sollecito_asc', label:'Non sollecitato da pi\u00f9 tempo' },
+    { key:'sollecito_desc', label:'Sollecitato pi\u00f9 di recente' }
+  ];
+  var VISTE = [ { key:'per-tipo', label:'Divisi per tipo' }, { key:'lista', label:'Elenco unico' } ];
+
+  function compareClienti(a,b){
+    var sb2 = state.sortBy;
+    if(sb2==='nome_asc' || sb2==='nome_desc'){
+      var ka = ((a.c.cognome||a.c.nome)+' '+a.c.nome).toLowerCase();
+      var kb = ((b.c.cognome||b.c.nome)+' '+b.c.nome).toLowerCase();
+      var cmp = ka.localeCompare(kb,'it');
+      return sb2==='nome_asc' ? cmp : -cmp;
+    }
+    if(sb2==='saldo_asc') return a.saldo-b.saldo;
+    if(sb2==='ultimo_pagamento_asc' || sb2==='ultimo_pagamento_desc'){
+      var ua=ultimoPagamentoCliente(a.c.id)||'0000-00-00', ub=ultimoPagamentoCliente(b.c.id)||'0000-00-00';
+      if(ua===ub) return 0; var asc=ua<ub?-1:1; return sb2==='ultimo_pagamento_asc'?asc:-asc;
+    }
+    if(sb2==='apertura_asc' || sb2==='apertura_desc'){
+      var pa=primoSospesoCliente(a.c.id)||'9999-99-99', pb=primoSospesoCliente(b.c.id)||'9999-99-99';
+      if(pa===pb) return 0; var ascA=pa<pb?-1:1; return sb2==='apertura_asc'?ascA:-ascA;
+    }
+    if(sb2==='sollecito_asc' || sb2==='sollecito_desc'){
+      var sa=ultimoSollecitoData(a.c.id)||'0000-00-00', sB=ultimoSollecitoData(b.c.id)||'0000-00-00';
+      if(sa===sB) return 0; var ascS=sa<sB?-1:1; return sb2==='sollecito_asc'?ascS:-ascS;
+    }
+    return b.saldo-a.saldo;
+  }
+
+  // ---------- init & auth ----------
+  async function init(){
+    var res = await sb.auth.getSession();
+    if(res.data && res.data.session){
+      state.session = res.data.session;
+      await loadProfile();
+      await loadAll();
+      state.view = 'clienti';
+    } else {
+      state.view = 'login';
+    }
+    render();
+  }
+  async function loadProfile(){
+    var uidUser = state.session.user.id;
+    var p = await sb.from('profiles').select('*').eq('id',uidUser).maybeSingle();
+    state.profile = p.data || { nome: state.session.user.email, is_admin:false };
+  }
+
+  function render(){
+    if(state.view==='login') return renderLogin();
+    if(state.view==='clienti') return renderClienti();
+    if(state.view==='cliente') return renderClienteDetail();
+    if(state.view==='impostazioni') return renderImpostazioni();
+  }
+
+  function renderLogin(){
+    root.innerHTML =
+      '<div class="login-wrap"><div class="login-card">'+
+        '<img src="'+LOGO_B64+'" style="height:44px; margin-bottom:14px;">'+
+        '<h2 style="margin:0 0 4px;">Quaderno dei Sospesi</h2>'+
+        '<div class="meta-line" style="margin-bottom:18px;">Accedi con le tue credenziali</div>'+
+        '<div style="text-align:left;">'+
+          '<label class="field-label">Email</label><input type="email" id="loginEmail">'+
+          '<label class="field-label">Password</label><input type="password" id="loginPassword">'+
+        '</div>'+
+        (state.loginError ? '<div class="error-msg">'+state.loginError+'</div>' : '')+
+        '<button class="btn" id="btnLogin" style="width:100%; margin-top:16px;">Entra</button>'+
+      '</div></div>';
+    document.getElementById('btnLogin').onclick = async function(){
+      var email = document.getElementById('loginEmail').value.trim();
+      var password = document.getElementById('loginPassword').value;
+      state.loginError='';
+      var res = await sb.auth.signInWithPassword({ email:email, password:password });
+      if(res.error){ state.loginError = 'Credenziali non valide.'; renderLogin(); return; }
+      state.session = res.data.session;
+      await loadProfile();
+      await loadAll();
+      state.view='clienti';
+      render();
+    };
+  }
+
+  function topbarHtml(){
+    return '<div class="topbar">'+
+      '<div class="brand" style="display:flex; align-items:center; gap:12px;"><img src="'+LOGO_B64+'" alt="La Corte Inglese" style="height:38px;"><div><h1>Quaderno dei Sospesi</h1><div class="sub">registro clienti e crediti</div></div></div>'+
+      '<div style="display:flex; align-items:center; gap:10px;">'+
+        '<span class="meta-line">'+escapeHtml(currentName())+' \u00b7 <span id="btnLogout" style="cursor:pointer; text-decoration:underline;">esci</span></span>'+
+        (isAdmin() ? '<button class="btn secondary small" id="btnImpostazioni">\u2699 Admin</button>' : '')+
+      '</div>'+
+    '</div>';
+  }
+  function wireTopbarSettings(){
+    var b=document.getElementById('btnImpostazioni'); if(b) b.onclick=function(){ state.view='impostazioni'; render(); };
+    var l=document.getElementById('btnLogout'); if(l) l.onclick=async function(){ await sb.auth.signOut(); state.session=null; state.profile=null; state.view='login'; render(); };
+  }
+
+  // ---------- lista clienti ----------
+  function renderRigaCliente(x){
+    var saldato = x.saldo<=0;
+    var stato = statoClienteAggregato(x.c.id);
+    var dueBadge = '';
+    if(stato){ var cls=stato.livello==='late'?'due-badge-late':(stato.livello==='mid'?'due-badge-mid':'due-badge-ok'); dueBadge='<span class="due-badge '+cls+'">'+stato.testo+'</span>'; }
+    var tipi = tipiClienteAperti(x.c.id);
+    var haBonifico = haBonificoAtteso(x.c.id);
+    var tipiPills = (tipi.dilazione?'<span class="type-pill type-pill-dilazione" title="Ha dilazioni brevi aperte">D</span>':'')+
+      (tipi.finanziamento?'<span class="type-pill type-pill-finanziamento" title="Ha finanziamenti a rate aperti">F</span>':'');
+    var info = [];
+    if(x.c.telefono) info.push('\ud83d\udcde '+x.c.telefono);
+    if(x.c.indirizzo) info.push('\ud83d\udccd '+x.c.indirizzo+(x.c.paese?' ('+x.c.paese+')':''));
+    else if(x.c.paese) info.push('\ud83d\udccd '+x.c.paese);
+    var infoLine = info.length ? '<div class="meta-line">'+escapeHtml(info.join(' \u00b7 '))+'</div>' : '';
+    var sol = ultimoSollecitoDettaglio(x.c.id);
+    var solLine = '<div class="meta-line">'+(sol?'\ud83d\udd14 ultimo sollecito '+giorniDa(sol.data)+' gg fa \u00b7 '+ESITI_SOLLECITO[sol.esito]:'\ud83d\udd14 nessun sollecito registrato')+'</div>';
+    return '<button class="row-btn" data-cliente="'+x.c.id+'">'+
+      (haBonifico ? '<span class="corner-bonifico" title="Bonifico bancario da verificare"></span><span class="corner-bonifico-icon">\ud83c\udfe6</span>' : '')+
+      '<div><span class="row-nome">'+escapeHtml(nomeCompleto(x.c))+'</span>'+infoLine+solLine+'</div>'+
+      '<div class="row-side">'+tipiPills+dueBadge+
+        '<span class="mono row-amt '+(saldato?'text-green':'text-red')+'">'+fmtEUR(x.saldo)+'</span>'+
+        '<span class="stamp '+(saldato?'text-green':'text-red')+'">'+(saldato?'SALDATO':'APERTO')+'</span>'+
+      '</div></button>';
+  }
+
+  function renderClienti(){
+    var totale = state.clienti.reduce(function(a,c){return a+saldoCliente(c.id);},0);
+    var apertiInfo = state.clienti.map(function(c){return {c:c, saldo:saldoCliente(c.id)};}).filter(function(x){return x.saldo>0;});
+    var inRitardo = apertiInfo.map(function(x){return {c:x.c, saldo:x.saldo, stato:statoClienteAggregato(x.c.id)};}).filter(function(x){return x.stato && x.stato.livello==='late';}).sort(function(a,b){return b.stato.giorni-a.stato.giorni;});
+
+    root.innerHTML = topbarHtml()+
+      '<div class="dash-grid">'+
+        '<div class="dash-box warn"><span class="label">Totale sospeso</span><span class="mono value">'+fmtEUR(totale)+'</span></div>'+
+        '<div class="dash-box"><span class="label">Clienti con saldo aperto</span><span class="mono value">'+apertiInfo.length+'</span></div>'+
+        '<div class="dash-box '+(inRitardo.length?'warn':'ok')+'"><span class="label">In ritardo</span><span class="mono value">'+inRitardo.length+'</span></div>'+
+      '</div>'+
+      (inRitardo.length ?
+        '<div class="overdue-panel"><div class="overdue-panel-head" id="overdueToggle"><h3>Clienti in ritardo ('+inRitardo.length+')</h3><span>'+(state.overduePanelOpen?'\u25b4':'\u25be')+'</span></div>'+
+          (state.overduePanelOpen ? inRitardo.map(function(x){
+            return '<div class="overdue-row" data-cliente="'+x.c.id+'"><span>'+escapeHtml(x.c.nome)+'</span><span><span class="due-badge due-badge-late">'+x.stato.testo+'</span> <span class="mono text-red" style="margin-left:8px;">'+fmtEUR(x.saldo)+'</span></span></div>';
+          }).join('') : '')+
+        '</div>' : '')+
+      '<div id="formClientePanel"></div>'+
+      '<div class="toolbar" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">'+
+        '<span class="sort-carousel"><span class="sort-label">Ordina per</span>'+
+          '<button class="sort-toggle" id="sortToggle"><span>'+(CRITERI_ORDINE.find(function(c){return c.key===state.sortBy;})||CRITERI_ORDINE[0]).label+'</span><span>'+(state.sortMenuOpen?'\u25b4':'\u25be')+'</span></button>'+
+          (state.sortMenuOpen ? '<div class="sort-menu">'+CRITERI_ORDINE.map(function(c){return '<button class="sort-menu-item '+(state.sortBy===c.key?'active':'')+'" data-sort="'+c.key+'">'+c.label+'</button>';}).join('')+'</div>' : '')+
+        '</span>'+
+        '<span class="sort-carousel"><span class="sort-label">Vista</span>'+
+          '<button class="sort-toggle" id="viewToggle"><span>'+(VISTE.find(function(v){return v.key===state.viewMode;})||VISTE[0]).label+'</span><span>'+(state.viewMenuOpen?'\u25b4':'\u25be')+'</span></button>'+
+          (state.viewMenuOpen ? '<div class="sort-menu">'+VISTE.map(function(v){return '<button class="sort-menu-item '+(state.viewMode===v.key?'active':'')+'" data-view="'+v.key+'">'+v.label+'</button>';}).join('')+'</div>' : '')+
+        '</span>'+
+      '</div>'+
+      '<div class="toolbar" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px;">'+
+        '<input type="text" style="max-width:240px;" id="search" placeholder="Cerca cliente..." value="'+escapeHtml(state.search)+'">'+
+        '<div style="display:flex; gap:4px; background:#e5ddc7; padding:3px; border-radius:4px;">'+
+          ['tutti','aperti','ritardo','bonifico','saldati'].map(function(f){
+            var lbl = f==='tutti'?'Tutti':f==='aperti'?'Aperti':f==='ritardo'?'In ritardo':f==='bonifico'?'\ud83c\udfe6 Bonifici':'Saldati';
+            return '<button data-filter="'+f+'" style="font-family:Courier New,monospace; font-size:12px; border:none; background:'+(state.filter===f?'#fffdf7':'transparent')+'; padding:6px 12px; border-radius:3px; cursor:pointer; color:'+(state.filter===f?'var(--ink)':'var(--ink-soft)')+';">'+lbl+'</button>';
+          }).join('')+
+        '</div>'+
+        '<button class="btn" id="btnNuovoCliente">+ Nuovo cliente</button>'+
+      '</div>'+
+      '<div class="ledger-sheet" id="listaClienti"></div>';
+
+    document.getElementById('search').oninput = function(e){ state.search=e.target.value; renderListaClienti(); };
+    document.querySelectorAll('[data-filter]').forEach(function(b){ b.onclick=function(){ state.filter=b.getAttribute('data-filter'); renderClienti(); }; });
+    document.getElementById('btnNuovoCliente').onclick = function(){ state.formClienteOpen=true; renderFormCliente(); };
+    wireTopbarSettings();
+    document.getElementById('sortToggle').onclick = function(e){ e.stopPropagation(); state.sortMenuOpen=!state.sortMenuOpen; state.viewMenuOpen=false; renderClienti(); };
+    document.querySelectorAll('[data-sort]').forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); state.sortBy=b.getAttribute('data-sort'); state.sortMenuOpen=false; renderClienti(); }; });
+    document.getElementById('viewToggle').onclick = function(e){ e.stopPropagation(); state.viewMenuOpen=!state.viewMenuOpen; state.sortMenuOpen=false; renderClienti(); };
+    document.querySelectorAll('[data-view]').forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); state.viewMode=b.getAttribute('data-view'); state.viewMenuOpen=false; renderClienti(); }; });
+    if(state.sortMenuOpen || state.viewMenuOpen){
+      setTimeout(function(){ document.addEventListener('click', function close(e){ if(!e.target.closest('.sort-carousel')){ state.sortMenuOpen=false; state.viewMenuOpen=false; renderClienti(); } document.removeEventListener('click', close); }); },0);
+    }
+    var ot = document.getElementById('overdueToggle'); if(ot) ot.onclick=function(){ state.overduePanelOpen=!state.overduePanelOpen; renderClienti(); };
+    document.querySelectorAll('.overdue-row[data-cliente]').forEach(function(r){ r.onclick=function(){ state.selectedClienteId=r.getAttribute('data-cliente'); state.view='cliente'; render(); }; });
+
+    renderFormCliente();
+    renderListaClienti();
+  }
+
+  function renderListaClienti(){
+    var el = document.getElementById('listaClienti');
+    var base = state.clienti.map(function(c){return {c:c, saldo:saldoCliente(c.id)};})
+      .filter(function(x){return nomeCompleto(x.c).toLowerCase().indexOf(state.search.trim().toLowerCase())>=0;})
+      .filter(function(x){
+        if(state.filter==='aperti') return x.saldo>0;
+        if(state.filter==='saldati') return x.saldo<=0;
+        if(state.filter==='ritardo'){ var st=statoClienteAggregato(x.c.id); return st && st.livello==='late'; }
+        if(state.filter==='bonifico') return haBonificoAtteso(x.c.id);
+        return true;
+      });
+
+    if(state.viewMode==='per-tipo'){
+      var dilaz = base.filter(function(x){return tipiClienteAperti(x.c.id).dilazione;}).sort(compareClienti);
+      var finan = base.filter(function(x){return tipiClienteAperti(x.c.id).finanziamento;}).sort(compareClienti);
+      el.innerHTML = '<div class="sospeso-columns">'+
+        '<div class="sospeso-section"><div class="sospeso-section-head"><h3>Dilazioni brevi ('+dilaz.length+')</h3></div>'+(dilaz.length?dilaz.map(renderRigaCliente).join(''):'<div class="sospeso-section-empty">Nessun cliente con dilazioni brevi aperte</div>')+'</div>'+
+        '<div class="sospeso-section"><div class="sospeso-section-head"><h3>Finanziamenti a rate ('+finan.length+')</h3></div>'+(finan.length?finan.map(renderRigaCliente).join(''):'<div class="sospeso-section-empty">Nessun cliente con finanziamenti a rate aperti</div>')+'</div>'+
+      '</div>';
+      document.querySelectorAll('[data-cliente]').forEach(function(b){ b.onclick=function(){ state.selectedClienteId=b.getAttribute('data-cliente'); state.view='cliente'; render(); }; });
+      return;
+    }
+    var list = base.sort(compareClienti);
+    if(!list.length){ el.innerHTML='<div class="empty-state">'+(state.clienti.length===0?'Nessun sospeso ancora registrato. Aggiungi il primo cliente.':'Nessun cliente corrisponde alla ricerca.')+'</div>'; return; }
+    el.innerHTML = list.map(renderRigaCliente).join('');
+    document.querySelectorAll('[data-cliente]').forEach(function(b){ b.onclick=function(){ state.selectedClienteId=b.getAttribute('data-cliente'); state.view='cliente'; render(); }; });
+  }
+
+  function renderFormCliente(){
+    var panel = document.getElementById('formClientePanel');
+    if(!state.formClienteOpen){ panel.innerHTML=''; return; }
+    var d = state.formClienteDraft;
+    panel.innerHTML = '<div class="panel"><h2>Nuovo cliente</h2>'+
+      '<div class="field-row"><div class="field"><label class="field-label">Nome</label><input type="text" id="cNome" value="'+escapeHtml(d.nome)+'"></div>'+
+      '<div class="field"><label class="field-label">Cognome</label><input type="text" id="cCognome" value="'+escapeHtml(d.cognome)+'"></div></div>'+
+      '<div class="field-row"><div class="field"><label class="field-label">Telefono (facoltativo)</label><input type="tel" id="cTelefono" value="'+escapeHtml(d.telefono)+'"></div></div>'+
+      '<div class="back-link" id="toggleAltriDati">'+(state.formClienteAltriOpen?'\u2212 Nascondi altri dati':'+ Altri dati (paese, indirizzo, fatturazione, nota)')+'</div>'+
+      (state.formClienteAltriOpen ?
+        '<div class="field-row" style="margin-top:10px;"><div class="field"><label class="field-label">Paese</label><input type="text" id="cPaese" value="'+escapeHtml(d.paese)+'"></div>'+
+        '<div class="field"><label class="field-label">Indirizzo</label><input type="text" id="cIndirizzo" value="'+escapeHtml(d.indirizzo)+'"></div></div>'+
+        '<div class="field-row"><div class="field"><label class="field-label">Fatturazione</label><input type="text" id="cFatturazione" value="'+escapeHtml(d.fatturazione)+'"></div></div>'+
+        '<div class="field-row"><div class="field"><label class="field-label">Nota sul cliente</label><input type="text" id="cNote" value="'+escapeHtml(d.note)+'"></div></div>' : '')+
+      (state.authError ? '<div class="error-msg">'+state.authError+'</div>' : '')+
+      '<div class="panel-actions"><button class="btn secondary" id="btnAnnullaCliente">Annulla</button><button class="btn" id="btnSalvaCliente">Crea cliente</button></div>'+
+    '</div>';
+    document.getElementById('cNome').oninput = function(e){ state.formClienteDraft.nome=e.target.value; };
+    document.getElementById('cCognome').oninput = function(e){ state.formClienteDraft.cognome=e.target.value; };
+    document.getElementById('cTelefono').oninput = function(e){ state.formClienteDraft.telefono=e.target.value; };
+    if(state.formClienteAltriOpen){
+      document.getElementById('cPaese').oninput=function(e){ state.formClienteDraft.paese=e.target.value; };
+      document.getElementById('cIndirizzo').oninput=function(e){ state.formClienteDraft.indirizzo=e.target.value; };
+      document.getElementById('cFatturazione').oninput=function(e){ state.formClienteDraft.fatturazione=e.target.value; };
+      document.getElementById('cNote').oninput=function(e){ state.formClienteDraft.note=e.target.value; };
+    }
+    document.getElementById('toggleAltriDati').onclick = function(){ state.formClienteAltriOpen=!state.formClienteAltriOpen; renderFormCliente(); };
+    document.getElementById('btnAnnullaCliente').onclick = function(){ state.formClienteOpen=false; state.formClienteAltriOpen=false; state.formClienteDraft={nome:'',cognome:'',telefono:'',paese:'',indirizzo:'',fatturazione:'',note:''}; state.authError=''; renderFormCliente(); };
+    document.getElementById('btnSalvaCliente').onclick = async function(){
+      var d2 = state.formClienteDraft;
+      state.authError='';
+      if(!d2.nome.trim()){ state.authError='Inserisci il nome del cliente.'; return renderFormCliente(); }
+      var ins = await sb.from('clienti').insert({
+        nome:d2.nome.trim(), cognome:d2.cognome.trim(), telefono:d2.telefono.trim(), paese:d2.paese.trim(),
+        indirizzo:d2.indirizzo.trim(), fatturazione:d2.fatturazione.trim(), note:d2.note.trim(), creato_da: currentName()
+      }).select().single();
+      if(ins.error){ state.authError='Errore nel salvataggio: '+ins.error.message; return renderFormCliente(); }
+      var cliente = mapCliente(ins.data);
+      state.clienti.unshift(cliente);
+      state.formClienteOpen=false; state.formClienteAltriOpen=false;
+      state.formClienteDraft={nome:'',cognome:'',telefono:'',paese:'',indirizzo:'',fatturazione:'',note:''};
+      state.selectedClienteId = cliente.id;
+      state.view='cliente';
+      state.formSospesoOpen=true; state.formHasScadenza=false;
+      state.formSospesoDraft={descrizione:'',importo:'',dataApertura:todayISO(),scadenza:'',tipo:'dilazione',bonifico:false,nota:''};
+      render();
+    };
+  }
+
+  // ---------- dettaglio cliente ----------
+  function stampaRiepilogoCliente(cliente){
+    var mySospesi = state.sospesi.filter(function(s){return s.clienteId===cliente.id;});
+    var totale = saldoCliente(cliente.id);
+    var righeInfo = ''+
+      (cliente.telefono?'<div class="print-row"><span>Telefono</span><span>'+escapeHtml(cliente.telefono)+'</span></div>':'')+
+      (cliente.indirizzo?'<div class="print-row"><span>Indirizzo</span><span>'+escapeHtml(cliente.indirizzo)+(cliente.paese?' ('+escapeHtml(cliente.paese)+')':'')+'</span></div>':'')+
+      (cliente.fatturazione?'<div class="print-row"><span>Fatturazione</span><span>'+escapeHtml(cliente.fatturazione)+'</span></div>':'');
+    function sezione(titolo, elenco){
+      if(!elenco.length) return '';
+      var righe = elenco.map(function(s){
+        var saldo=saldoSospeso(s), pagato=(s.pagamenti||[]).reduce(function(a,p){return a+p.importo;},0);
+        var head='<div class="print-row"><span>'+escapeHtml(s.descrizione||'Sospeso')+' (aperto il '+fmtDate(s.dataApertura)+(s.scadenza?', scad. '+fmtDate(s.scadenza):'')+')</span><span>'+fmtEUR(saldo)+' / '+fmtEUR(s.importoIniziale)+'</span></div>';
+        var recap = pagato>0 ? '<div class="print-row" style="padding-left:14px; color:#555; font-style:italic;"><span>Pagato finora ('+(s.pagamenti||[]).length+' pagamenti)</span><span>'+fmtEUR(pagato)+'</span></div>' : '<div class="print-row" style="padding-left:14px; color:#555; font-style:italic;"><span>Nessun pagamento ricevuto finora</span><span></span></div>';
+        var pag = (s.pagamenti||[]).map(function(p){ return '<div class="print-row" style="padding-left:14px; color:#555;"><span>Pagamento '+fmtDate(p.data)+(p.metodo?' ('+p.metodo+')':'')+'</span><span>'+fmtEUR(p.importo)+'</span></div>'; }).join('');
+        return head+recap+pag;
+      }).join('');
+      return '<h2>'+titolo+'</h2>'+righe;
+    }
+    var dilazioni = mySospesi.filter(function(s){return s.tipo!=='finanziamento';});
+    var finanziamenti = mySospesi.filter(function(s){return s.tipo==='finanziamento';});
+    var html = '<div style="display:flex; align-items:center; gap:14px; margin-bottom:6px;"><img src="'+LOGO_B64+'" style="height:44px;"><h1 style="margin:0;">Quaderno dei Sospesi</h1></div>'+
+      '<div style="color:#555; font-size:12px; margin-bottom:2px;">La Corte S.r.l. \u00b7 Ponte S. Antuono, 84035 Polla (SA) \u00b7 P.IVA 04215660657</div>'+
+      '<div style="color:#555; font-size:12px; margin-bottom:10px;">Riepilogo generato il '+fmtDate(todayISO())+'</div>'+
+      '<h2 style="margin-top:0;">'+escapeHtml(nomeCompleto(cliente))+'</h2>'+righeInfo+
+      sezione('Dilazioni brevi', dilazioni)+sezione('Piani di rientro', finanziamenti)+
+      '<div class="print-total print-row"><span>Totale da ricevere</span><span>'+fmtEUR(totale)+'</span></div>';
+    var area = document.getElementById('printArea');
+    if(!area){ area=document.createElement('div'); area.id='printArea'; document.body.appendChild(area); }
+    area.innerHTML = html;
+    window.print();
+  }
+
+  function renderClienteDetail(){
+    var cliente = state.clienti.find(function(c){return c.id===state.selectedClienteId;});
+    if(!cliente){ state.view='clienti'; return render(); }
+
+    if(state.editClienteOpen){
+      root.innerHTML = topbarHtml()+
+        '<div class="back-link" id="backToList">&larr; Torna all\'elenco</div>'+
+        '<div class="panel"><h2>Modifica cliente</h2>'+
+        '<div class="field-row"><div class="field"><label class="field-label">Nome</label><input type="text" id="ecNome" value="'+escapeHtml(cliente.nome)+'"></div>'+
+        '<div class="field"><label class="field-label">Cognome</label><input type="text" id="ecCognome" value="'+escapeHtml(cliente.cognome||'')+'"></div></div>'+
+        '<div class="field-row"><div class="field"><label class="field-label">Telefono</label><input type="tel" id="ecTelefono" value="'+escapeHtml(cliente.telefono||'')+'"></div>'+
+        '<div class="field"><label class="field-label">Paese</label><input type="text" id="ecPaese" value="'+escapeHtml(cliente.paese||'')+'"></div></div>'+
+        '<div class="field-row"><div class="field"><label class="field-label">Indirizzo</label><input type="text" id="ecIndirizzo" value="'+escapeHtml(cliente.indirizzo||'')+'"></div></div>'+
+        '<div class="field-row"><div class="field"><label class="field-label">Fatturazione</label><input type="text" id="ecFatturazione" value="'+escapeHtml(cliente.fatturazione||'')+'"></div></div>'+
+        '<div class="field-row"><div class="field"><label class="field-label">Nota</label><input type="text" id="ecNote" value="'+escapeHtml(cliente.note||'')+'"></div></div>'+
+        (state.authError?'<div class="error-msg">'+state.authError+'</div>':'')+
+        '<div class="panel-actions"><button class="btn secondary" id="btnAnnullaEditCliente">Annulla</button><button class="btn" id="btnSalvaEditCliente">Salva modifiche</button></div></div>';
+      wireTopbarSettings();
+      document.getElementById('backToList').onclick=function(){ state.view='clienti'; state.editClienteOpen=false; render(); };
+      document.getElementById('btnAnnullaEditCliente').onclick=function(){ state.editClienteOpen=false; state.authError=''; renderClienteDetail(); };
+      document.getElementById('btnSalvaEditCliente').onclick=async function(){
+        var nome=document.getElementById('ecNome').value.trim();
+        if(!nome){ state.authError='Il nome non pu\u00f2 essere vuoto.'; return renderClienteDetail(); }
+        var patch = { nome:nome, cognome:document.getElementById('ecCognome').value.trim(), telefono:document.getElementById('ecTelefono').value.trim(),
+          paese:document.getElementById('ecPaese').value.trim(), indirizzo:document.getElementById('ecIndirizzo').value.trim(),
+          fatturazione:document.getElementById('ecFatturazione').value.trim(), note:document.getElementById('ecNote').value.trim() };
+        var upd = await sb.from('clienti').update(patch).eq('id',cliente.id);
+        if(upd.error){ state.authError='Errore: '+upd.error.message; return renderClienteDetail(); }
+        Object.assign(cliente, patch);
+        state.editClienteOpen=false; state.authError='';
+        renderClienteDetail();
+      };
+      return;
+    }
+
+    root.innerHTML = topbarHtml()+
+      '<div class="back-link" id="backToList">&larr; Torna all\'elenco</div>'+
+      '<div class="panel"><div class="sospeso-head"><h2 style="margin:0;">'+escapeHtml(nomeCompleto(cliente))+'</h2>'+
+      '<div style="display:flex; align-items:center; gap:8px;">'+
+        '<button class="btn secondary small" id="btnStampaCliente">\ud83d\udda8\ufe0f Stampa riepilogo</button>'+
+        '<button class="btn secondary small" id="btnModificaCliente">Modifica cliente</button>'+
+        '<span class="stamp '+(saldoCliente(cliente.id)<=0?'text-green':'text-red')+'">'+(saldoCliente(cliente.id)<=0?'SALDATO':'APERTO')+'</span>'+
+      '</div></div>'+
+      (cliente.note?'<div class="meta-line">'+escapeHtml(cliente.note)+'</div>':'')+
+      (cliente.telefono?'<div class="meta-line">\ud83d\udcde '+escapeHtml(cliente.telefono)+'</div>':'')+
+      (cliente.indirizzo?'<div class="meta-line">\ud83d\udccd '+escapeHtml(cliente.indirizzo)+(cliente.paese?' \u00b7 '+escapeHtml(cliente.paese):'')+'</div>':(cliente.paese?'<div class="meta-line">\ud83d\udccd '+escapeHtml(cliente.paese)+'</div>':''))+
+      (cliente.fatturazione?'<div class="meta-line">Fatturazione: '+escapeHtml(cliente.fatturazione)+'</div>':'')+
+      (cliente.creatoDa?'<div class="meta-line">Registrato da: '+escapeHtml(cliente.creatoDa)+'</div>':'')+
+      '<div class="saldo-row big"><span>Da ricevere in totale</span><span class="mono val '+(saldoCliente(cliente.id)>0?'text-red':'text-green')+'">'+fmtEUR(saldoCliente(cliente.id))+'</span></div></div>'+
+      '<div id="sollecitiPanel"></div>'+
+      '<div id="formSospesoPanel"></div>'+
+      '<div class="panel-actions" style="margin-bottom:12px;"><button class="btn" id="btnNuovoSospeso">+ Nuovo sospeso</button><button class="btn danger" id="btnEliminaCliente">Elimina cliente</button></div>'+
+      '<div id="listaSospesi"></div>';
+
+    wireTopbarSettings();
+    document.getElementById('backToList').onclick=function(){ state.view='clienti'; state.formSospesoOpen=false; render(); };
+    document.getElementById('btnModificaCliente').onclick=function(){ state.editClienteOpen=true; state.authError=''; renderClienteDetail(); };
+    document.getElementById('btnStampaCliente').onclick=function(){ stampaRiepilogoCliente(cliente); };
+    document.getElementById('btnNuovoSospeso').onclick=function(){
+      state.formSospesoOpen=true; state.formHasScadenza=false;
+      state.formSospesoDraft={descrizione:'',importo:'',dataApertura:todayISO(),scadenza:'',tipo:'dilazione',bonifico:false,nota:''};
+      renderFormSospeso();
+    };
+    document.getElementById('btnEliminaCliente').onclick=async function(){
+      if(!confirm('Eliminare definitivamente questo cliente e tutta la sua storia?')) return;
+      await sb.from('clienti').delete().eq('id',cliente.id);
+      state.clienti = state.clienti.filter(function(c){return c.id!==cliente.id;});
+      state.sospesi = state.sospesi.filter(function(s){return s.clienteId!==cliente.id;});
+      state.solleciti = state.solleciti.filter(function(s){return s.clienteId!==cliente.id;});
+      state.view='clienti'; render();
+    };
+
+    renderFormSospeso();
+    renderListaSospesi();
+    renderSollecitiPanel(cliente);
+  }
+
+  function renderSollecitiPanel(cliente){
+    var el = document.getElementById('sollecitiPanel'); if(!el) return;
+    var sol = state.solleciti.filter(function(s){return s.clienteId===cliente.id;}).slice().sort(function(a,b){return a.data<b.data?1:(a.data>b.data?-1:0);});
+    var ultimo = sol[0];
+    el.innerHTML = '<div class="panel"><h2>Solleciti</h2>'+
+      (ultimo?'<div class="due-badge '+clsEsito(ultimo.esito)+'" style="display:inline-block; margin-bottom:12px;">ultimo sollecito '+giorniDa(ultimo.data)+' gg fa \u00b7 '+ESITI_SOLLECITO[ultimo.esito]+'</div>':'<div class="meta-line" style="margin-bottom:12px;">Nessun sollecito ancora registrato.</div>')+
+      '<div class="mini-form">'+
+        '<div class="mf-field"><label>Data</label><input type="date" id="solData" value="'+todayISO()+'"></div>'+
+        '<div class="mf-field"><label>Come</label><select id="solTipo">'+Object.keys(TIPI_SOLLECITO).map(function(k){return '<option value="'+k+'">'+TIPI_SOLLECITO[k]+'</option>';}).join('')+'</select></div>'+
+        '<div class="mf-field"><label>Esito</label><select id="solEsito">'+Object.keys(ESITI_SOLLECITO).map(function(k){return '<option value="'+k+'">'+ESITI_SOLLECITO[k]+'</option>';}).join('')+'</select></div>'+
+        '<button class="btn small" id="btnRegistraSollecito">Registra sollecito</button>'+
+      '</div>'+
+      '<div class="field-row" style="margin-top:6px;"><div class="field"><input type="text" id="solNota" placeholder="Nota facoltativa"></div></div>'+
+      (sol.length?'<div class="pag-list-title">Storico solleciti</div>':'')+
+      sol.map(function(s){
+        return '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-top:1px solid var(--paper-line); font-size:13px; gap:8px; flex-wrap:wrap;">'+
+          '<span class="mono">'+fmtDate(s.data)+'</span><span>'+TIPI_SOLLECITO[s.tipo]+'</span>'+
+          '<span class="due-badge '+clsEsito(s.esito)+'">'+ESITI_SOLLECITO[s.esito]+'</span>'+
+          (s.nota?'<span class="meta-line" style="flex:1; min-width:120px;">'+escapeHtml(s.nota)+'</span>':'<span style="flex:1;"></span>')+
+          '<span class="rm" style="color:var(--red); cursor:pointer; font-size:12px;" data-rm-sollecito="'+s.id+'">rimuovi</span>'+
+        '</div>';
+      }).join('')+
+    '</div>';
+    document.getElementById('btnRegistraSollecito').onclick=async function(){
+      var data=document.getElementById('solData').value||todayISO();
+      var tipo=document.getElementById('solTipo').value, esito=document.getElementById('solEsito').value;
+      var nota=document.getElementById('solNota').value.trim();
+      var ins = await sb.from('solleciti').insert({ cliente_id:cliente.id, data:data, tipo:tipo, esito:esito, nota:nota }).select().single();
+      if(!ins.error){ state.solleciti.unshift(mapSollecito(ins.data)); renderSollecitiPanel(cliente); }
+    };
+    document.querySelectorAll('[data-rm-sollecito]').forEach(function(b){
+      b.onclick=async function(){
+        var sid=b.getAttribute('data-rm-sollecito');
+        await sb.from('solleciti').delete().eq('id',sid);
+        state.solleciti = state.solleciti.filter(function(s){return s.id!==sid;});
+        renderSollecitiPanel(cliente);
+      };
+    });
+  }
+
+  function renderFormSospeso(){
+    var panel = document.getElementById('formSospesoPanel'); if(!panel) return;
+    if(!state.formSospesoOpen){ panel.innerHTML=''; return; }
+    var d = state.formSospesoDraft;
+    panel.innerHTML = '<div class="panel"><h2>Nuovo sospeso</h2>'+
+      '<div class="field-row"><div class="field"><label class="field-label">Tipo di sospeso</label><select id="fTipo">'+
+        '<option value="dilazione" '+(d.tipo!=='finanziamento'?'selected':'')+'>Dilazione breve (saldo in un\'unica soluzione)</option>'+
+        '<option value="finanziamento" '+(d.tipo==='finanziamento'?'selected':'')+'>Finanziamento a rate (pagamenti mensili)</option>'+
+      '</select></div></div>'+
+      '<div class="field-row"><div class="field"><label class="field-label">Prodotto acquistato</label><input type="text" id="fDescrizione" value="'+escapeHtml(d.descrizione)+'"></div></div>'+
+      '<div class="field-row"><div class="field"><label class="field-label">Importo iniziale</label><input type="number" step="0.01" min="0" id="fImporto" value="'+escapeHtml(d.importo)+'"></div>'+
+      '<div class="field"><label class="field-label">Data apertura</label><input type="date" id="fDataApertura" value="'+(d.dataApertura||todayISO())+'"></div></div>'+
+      '<div class="field-check"><input type="checkbox" id="fHasScadenza" '+(state.formHasScadenza?'checked':'')+'><label for="fHasScadenza">Ha una scadenza</label></div>'+
+      '<div class="field-check"><input type="checkbox" id="fBonifico" '+(d.bonifico?'checked':'')+'><label for="fBonifico">\ud83c\udfe6 In attesa di bonifico bancario</label></div>'+
+      (state.formHasScadenza?'<div class="field-row"><div class="field"><label class="field-label">Scadenza</label><input type="date" id="fScadenza" value="'+(d.scadenza||'')+'"></div></div>':'')+
+      '<div class="field-row"><div class="field"><label class="field-label">Nota sul sospeso</label><input type="text" id="fNota" value="'+escapeHtml(d.nota||'')+'"></div></div>'+
+      (state.authError?'<div class="error-msg">'+state.authError+'</div>':'')+
+      '<div class="panel-actions"><button class="btn secondary" id="btnAnnullaSospeso">Annulla</button><button class="btn" id="btnSalvaSospeso">Salva sospeso</button></div></div>';
+    document.getElementById('fTipo').onchange=function(e){ state.formSospesoDraft.tipo=e.target.value; renderFormSospeso(); };
+    document.getElementById('fDescrizione').oninput=function(e){ state.formSospesoDraft.descrizione=e.target.value; };
+    document.getElementById('fImporto').oninput=function(e){ state.formSospesoDraft.importo=e.target.value; };
+    document.getElementById('fDataApertura').oninput=function(e){ state.formSospesoDraft.dataApertura=e.target.value; };
+    document.getElementById('fNota').oninput=function(e){ state.formSospesoDraft.nota=e.target.value; };
+    document.getElementById('fBonifico').onchange=function(e){ state.formSospesoDraft.bonifico=e.target.checked; };
+    if(state.formHasScadenza) document.getElementById('fScadenza').oninput=function(e){ state.formSospesoDraft.scadenza=e.target.value; };
+    document.getElementById('fHasScadenza').onchange=function(e){
+      state.formSospesoDraft.bonifico=document.getElementById('fBonifico').checked;
+      state.formSospesoDraft.nota=document.getElementById('fNota').value;
+      state.formHasScadenza=e.target.checked; renderFormSospeso();
+    };
+    document.getElementById('btnAnnullaSospeso').onclick=function(){ state.formSospesoOpen=false; state.authError=''; renderFormSospeso(); };
+    document.getElementById('btnSalvaSospeso').onclick=async function(){
+      var descrizione=document.getElementById('fDescrizione').value.trim();
+      var importo=Number(document.getElementById('fImporto').value);
+      var dataApertura=document.getElementById('fDataApertura').value||todayISO();
+      var scadenza=state.formHasScadenza?document.getElementById('fScadenza').value:null;
+      var tipo=document.getElementById('fTipo').value;
+      var bonifico=document.getElementById('fBonifico').checked;
+      var nota=document.getElementById('fNota').value.trim();
+      state.authError='';
+      if(!importo||importo<=0){ state.authError='Inserisci un importo valido.'; return renderFormSospeso(); }
+      if(state.formHasScadenza && !scadenza){ state.authError='Inserisci una scadenza, o disattiva l\'opzione.'; return renderFormSospeso(); }
+      var ins = await sb.from('sospesi').insert({
+        cliente_id: state.selectedClienteId, descrizione:descrizione, nota:nota, tipo:tipo,
+        data_apertura:dataApertura, scadenza:scadenza, importo_iniziale:importo, bonifico:bonifico, creato_da: currentName()
+      }).select('*, pagamenti(*)').single();
+      if(ins.error){ state.authError='Errore: '+ins.error.message; return renderFormSospeso(); }
+      state.sospesi.unshift(mapSospeso(ins.data));
+      state.formSospesoOpen=false;
+      state.formSospesoDraft={descrizione:'',importo:'',dataApertura:'',scadenza:'',tipo:'dilazione',bonifico:false,nota:''};
+      renderFormSospeso(); renderListaSospesi();
+      var cliente = state.clienti.find(function(c){return c.id===state.selectedClienteId;});
+      if(cliente) renderClienteDetail();
+    };
+  }
+
+  function renderCardSospeso(s){
+    var saldo=saldoSospeso(s), saldato=saldo<=0;
+    var pagatoFinora=(s.pagamenti||[]).reduce(function(a,p){return a+p.importo;},0);
+    var percentuale = s.importoIniziale>0 ? Math.min(100, Math.round((pagatoFinora/s.importoIniziale)*100)) : 0;
+    var giorniAperto = giorniDa(s.dataApertura);
+    var numPagamenti = (s.pagamenti||[]).length;
+    var pagHtml = (s.pagamenti||[]).map(function(p){
+      return '<div class="pag-line">'+
+        '<input type="date" value="'+(p.data||todayISO())+'" data-edit-data="'+s.id+'|'+p.id+'">'+
+        '<select data-edit-metodo="'+s.id+'|'+p.id+'"><option value="" '+(!p.metodo?'selected':'')+'>\u2014</option>'+
+        Object.keys(METODI).map(function(k){return '<option value="'+k+'" '+(p.metodo===k?'selected':'')+'>'+METODI[k]+'</option>';}).join('')+'</select>'+
+        '<span class="mono">'+fmtEUR(p.importo)+'</span>'+
+        '<span class="rm" style="color:var(--red); cursor:pointer;" data-rm-pag="'+s.id+'|'+p.id+'">rimuovi</span></div>';
+    }).join('');
+
+    if(state.editSospesoId===s.id){
+      var d = state.editSospesoDraft;
+      return '<div class="sospeso-card">'+
+        '<div class="field-row"><div class="field"><label class="field-label">Tipo</label><select id="esTipo">'+
+          '<option value="dilazione" '+(d.tipo!=='finanziamento'?'selected':'')+'>Dilazione breve</option>'+
+          '<option value="finanziamento" '+(d.tipo==='finanziamento'?'selected':'')+'>Finanziamento a rate</option>'+
+        '</select></div></div>'+
+        '<div class="field-row"><div class="field"><label class="field-label">Descrizione</label><input type="text" id="esDescrizione" value="'+escapeHtml(d.descrizione)+'"></div></div>'+
+        '<div class="field-row"><div class="field"><label class="field-label">Importo iniziale</label><input type="number" step="0.01" min="0" id="esImporto" value="'+escapeHtml(d.importo)+'"></div>'+
+        '<div class="field"><label class="field-label">Data apertura</label><input type="date" id="esDataApertura" value="'+(d.dataApertura||todayISO())+'"></div></div>'+
+        '<div class="field-check"><input type="checkbox" id="esHasScadenza" '+(d.hasScadenza?'checked':'')+'><label for="esHasScadenza">Ha una scadenza</label></div>'+
+        (d.hasScadenza?'<div class="field-row"><div class="field"><label class="field-label">Scadenza</label><input type="date" id="esScadenza" value="'+(d.scadenza||'')+'"></div></div>':'')+
+        '<div class="field-check"><input type="checkbox" id="esBonifico" '+(d.bonifico?'checked':'')+'><label for="esBonifico">\ud83c\udfe6 In attesa di bonifico</label></div>'+
+        '<div class="field-row"><div class="field"><label class="field-label">Nota</label><input type="text" id="esNota" value="'+escapeHtml(d.nota||'')+'"></div></div>'+
+        (pagatoFinora>0?'<div class="meta-line">Gi\u00e0 pagato: '+fmtEUR(pagatoFinora)+' \u2014 non pu\u00f2 scendere sotto questa cifra.</div>':'')+
+        (state.authError?'<div class="error-msg">'+state.authError+'</div>':'')+
+        '<div class="panel-actions"><button class="btn secondary" id="btnAnnullaEditSospeso">Annulla</button><button class="btn" id="btnSalvaEditSospeso">Salva modifiche</button></div></div>';
+    }
+
+    var statoS = statoSospeso(s);
+    var badgeCls = statoS?(statoS.livello==='late'?'due-badge-late':(statoS.livello==='mid'?'due-badge-mid':'due-badge-ok')):'';
+    return '<div class="sospeso-card '+(s.tipo==='finanziamento'?'tipo-finanziamento':'')+'">'+
+      '<div class="sospeso-head"><div><strong>'+escapeHtml(s.descrizione||'Sospeso')+(s.bonifico?' <span class="bonifico-tag" title="In attesa di bonifico bancario">\ud83c\udfe6</span>':'')+'</strong>'+
+      '<div class="meta-line">aperto il '+fmtDate(s.dataApertura)+(s.scadenza?' &middot; scadenza '+fmtDate(s.scadenza):'')+'</div>'+
+      (s.nota?'<div class="meta-line">\ud83d\udcdd '+escapeHtml(s.nota)+'</div>':'')+
+      (s.creatoDa?'<div class="meta-line">Registrato da: '+escapeHtml(s.creatoDa)+'</div>':'')+
+      '</div><div style="display:flex; align-items:center; gap:8px;"><button class="btn secondary small" data-edit-sospeso="'+s.id+'">Modifica</button>'+
+      '<span class="stamp '+(saldato?'text-green':'text-red')+'">'+(saldato?'SALDATO':'APERTO')+'</span></div></div>'+
+      (statoS?'<div class="due-badge '+badgeCls+'" style="display:inline-block; margin-bottom:8px;">'+statoS.testo+'</div>':'')+
+      '<div class="saldo-row"><span>Saldo</span><span class="mono val '+(saldato?'text-green':'text-red')+'">'+fmtEUR(saldo)+' / '+fmtEUR(s.importoIniziale)+'</span></div>'+
+      '<div class="progress-bar-outer"><div class="progress-bar-inner" style="width:'+percentuale+'%;"></div></div>'+
+      '<div class="sospeso-stats"><span>Pagato: <b>'+percentuale+'%</b></span><span>Aperto da: <b>'+giorniAperto+' gg</b></span><span>Pagamenti: <b>'+numPagamenti+'</b></span></div>'+
+      (s.pagamenti && s.pagamenti.length?'<div class="pag-list-title">Pagamenti effettuati</div>':'')+
+      pagHtml+
+      (!saldato ? '<div class="mini-form">'+
+        '<div class="mf-field"><label>Importo</label><input type="number" step="0.01" min="0" id="pay-'+s.id+'"></div>'+
+        '<div class="mf-field"><label>Data</label><input type="date" id="paydate-'+s.id+'" value="'+todayISO()+'"></div>'+
+        '<div class="mf-field"><label>Metodo</label><select id="paymetodo-'+s.id+'"><option value="">\u2014</option>'+Object.keys(METODI).map(function(k){return '<option value="'+k+'">'+METODI[k]+'</option>';}).join('')+'</select></div>'+
+        '<button class="btn small" data-pay="'+s.id+'">Registra pagamento</button></div>' : '')+
+    '</div>';
+  }
+
+  function renderListaSospesi(){
+    var el = document.getElementById('listaSospesi'); if(!el) return;
+    var lista = state.sospesi.filter(function(s){return s.clienteId===state.selectedClienteId;});
+    if(!lista.length){ el.innerHTML='<div class="empty-state">Nessun sospeso registrato per questo cliente.</div>'; return; }
+    var dilazioni = lista.filter(function(s){return s.tipo!=='finanziamento';});
+    var finanziamenti = lista.filter(function(s){return s.tipo==='finanziamento';});
+    var totD = dilazioni.reduce(function(a,s){return a+saldoSospeso(s);},0);
+    var totF = finanziamenti.reduce(function(a,s){return a+saldoSospeso(s);},0);
+    el.innerHTML = '<div class="sospeso-columns">'+
+      '<div class="sospeso-section"><div class="sospeso-section-head"><h3>Dilazioni brevi ('+dilazioni.length+')</h3><span class="mono">'+fmtEUR(totD)+'</span></div>'+
+      (dilazioni.length?dilazioni.map(renderCardSospeso).join(''):'<div class="sospeso-section-empty">Nessuna dilazione breve registrata</div>')+'</div>'+
+      '<div class="sospeso-section"><div class="sospeso-section-head"><h3>Finanziamenti a rate ('+finanziamenti.length+')</h3><span class="mono">'+fmtEUR(totF)+'</span></div>'+
+      (finanziamenti.length?finanziamenti.map(renderCardSospeso).join(''):'<div class="sospeso-section-empty">Nessun finanziamento a rate registrato</div>')+'</div>'+
+    '</div>';
+
+    document.querySelectorAll('[data-edit-sospeso]').forEach(function(b){
+      b.onclick=function(){
+        var sid=b.getAttribute('data-edit-sospeso');
+        var s=state.sospesi.find(function(x){return x.id===sid;});
+        state.editSospesoId=sid;
+        state.editSospesoDraft={descrizione:s.descrizione||'',importo:s.importoIniziale,dataApertura:s.dataApertura,scadenza:s.scadenza||'',hasScadenza:!!s.scadenza,tipo:s.tipo||'dilazione',bonifico:!!s.bonifico,nota:s.nota||''};
+        state.authError=''; renderListaSospesi();
+      };
+    });
+    if(state.editSospesoId){
+      var selEs=document.getElementById('esTipo'); if(selEs) selEs.onchange=function(e){ state.editSospesoDraft.tipo=e.target.value; renderListaSospesi(); };
+      var inDescEs=document.getElementById('esDescrizione'); if(inDescEs) inDescEs.oninput=function(e){ state.editSospesoDraft.descrizione=e.target.value; };
+      var inImpEs=document.getElementById('esImporto'); if(inImpEs) inImpEs.oninput=function(e){ state.editSospesoDraft.importo=e.target.value; };
+      var inDataEs=document.getElementById('esDataApertura'); if(inDataEs) inDataEs.oninput=function(e){ state.editSospesoDraft.dataApertura=e.target.value; };
+      var inScadEs=document.getElementById('esScadenza'); if(inScadEs) inScadEs.oninput=function(e){ state.editSospesoDraft.scadenza=e.target.value; };
+      var inNotaEs=document.getElementById('esNota'); if(inNotaEs) inNotaEs.oninput=function(e){ state.editSospesoDraft.nota=e.target.value; };
+      var chkBonEs=document.getElementById('esBonifico'); if(chkBonEs) chkBonEs.onchange=function(e){ state.editSospesoDraft.bonifico=e.target.checked; };
+      var chkEs=document.getElementById('esHasScadenza');
+      if(chkEs) chkEs.onchange=function(e){
+        state.editSospesoDraft.descrizione=document.getElementById('esDescrizione').value;
+        state.editSospesoDraft.importo=document.getElementById('esImporto').value;
+        state.editSospesoDraft.dataApertura=document.getElementById('esDataApertura').value;
+        state.editSospesoDraft.bonifico=document.getElementById('esBonifico').checked;
+        state.editSospesoDraft.nota=document.getElementById('esNota').value;
+        state.editSospesoDraft.hasScadenza=e.target.checked;
+        renderListaSospesi();
+      };
+      var btnAnnullaEs=document.getElementById('btnAnnullaEditSospeso'); if(btnAnnullaEs) btnAnnullaEs.onclick=function(){ state.editSospesoId=null; state.authError=''; renderListaSospesi(); };
+      var btnSalvaEs=document.getElementById('btnSalvaEditSospeso');
+      if(btnSalvaEs) btnSalvaEs.onclick=async function(){
+        var sid=state.editSospesoId;
+        var s=state.sospesi.find(function(x){return x.id===sid;});
+        var descrizione=document.getElementById('esDescrizione').value.trim();
+        var importo=Number(document.getElementById('esImporto').value);
+        var dataApertura=document.getElementById('esDataApertura').value||todayISO();
+        var hasScadenza=document.getElementById('esHasScadenza').checked;
+        var scadenza=hasScadenza?document.getElementById('esScadenza').value:null;
+        var tipo=document.getElementById('esTipo').value;
+        var bonifico=document.getElementById('esBonifico').checked;
+        var nota=document.getElementById('esNota').value.trim();
+        var pagatoFinora=(s.pagamenti||[]).reduce(function(a,p){return a+p.importo;},0);
+        state.authError='';
+        if(!importo||importo<=0){ state.authError='Inserisci un importo valido.'; return renderListaSospesi(); }
+        if(importo<pagatoFinora){ state.authError='L\'importo non pu\u00f2 essere inferiore a quanto gi\u00e0 pagato ('+fmtEUR(pagatoFinora)+').'; return renderListaSospesi(); }
+        if(hasScadenza && !scadenza){ state.authError='Inserisci una scadenza, o disattiva l\'opzione.'; return renderListaSospesi(); }
+        var upd = await sb.from('sospesi').update({ descrizione:descrizione, importo_iniziale:importo, data_apertura:dataApertura, scadenza:scadenza, tipo:tipo, bonifico:bonifico, nota:nota }).eq('id',sid);
+        if(upd.error){ state.authError='Errore: '+upd.error.message; return renderListaSospesi(); }
+        s.descrizione=descrizione; s.importoIniziale=importo; s.dataApertura=dataApertura; s.scadenza=scadenza; s.tipo=tipo; s.bonifico=bonifico; s.nota=nota;
+        state.editSospesoId=null;
+        renderListaSospesi();
+        var cliente=state.clienti.find(function(c){return c.id===state.selectedClienteId;});
+        if(cliente) renderClienteDetail();
+      };
+    }
+    document.querySelectorAll('[data-pay]').forEach(function(b){
+      b.onclick=async function(){
+        var sid=b.getAttribute('data-pay');
+        var input=document.getElementById('pay-'+sid);
+        var importo=Number(input.value);
+        if(!importo||importo<=0) return;
+        var dataInput=document.getElementById('paydate-'+sid);
+        var data=(dataInput&&dataInput.value)?dataInput.value:todayISO();
+        var metodoInput=document.getElementById('paymetodo-'+sid);
+        var metodo=metodoInput?metodoInput.value:'';
+        var ins = await sb.from('pagamenti').insert({ sospeso_id:sid, importo:importo, data:data, metodo:metodo }).select().single();
+        if(ins.error) return;
+        var s=state.sospesi.find(function(x){return x.id===sid;});
+        s.pagamenti.push(mapPagamento(ins.data));
+        renderListaSospesi();
+        var cliente=state.clienti.find(function(c){return c.id===state.selectedClienteId;});
+        if(cliente) renderClienteDetail();
+      };
+    });
+    document.querySelectorAll('[data-edit-data]').forEach(function(inp){
+      inp.onchange=async function(){
+        var parts=inp.getAttribute('data-edit-data').split('|');
+        if(!inp.value) return;
+        await sb.from('pagamenti').update({ data:inp.value }).eq('id',parts[1]);
+        var s=state.sospesi.find(function(x){return x.id===parts[0];});
+        var p=s.pagamenti.find(function(x){return x.id===parts[1];});
+        p.data=inp.value;
+        renderListaSospesi();
+      };
+    });
+    document.querySelectorAll('[data-edit-metodo]').forEach(function(sel){
+      sel.onchange=async function(){
+        var parts=sel.getAttribute('data-edit-metodo').split('|');
+        await sb.from('pagamenti').update({ metodo:sel.value }).eq('id',parts[1]);
+        var s=state.sospesi.find(function(x){return x.id===parts[0];});
+        var p=s.pagamenti.find(function(x){return x.id===parts[1];});
+        p.metodo=sel.value;
+        renderListaSospesi();
+      };
+    });
+    document.querySelectorAll('[data-rm-pag]').forEach(function(b){
+      b.onclick=async function(){
+        var parts=b.getAttribute('data-rm-pag').split('|');
+        await sb.from('pagamenti').delete().eq('id',parts[1]);
+        var s=state.sospesi.find(function(x){return x.id===parts[0];});
+        s.pagamenti=s.pagamenti.filter(function(p){return p.id!==parts[1];});
+        renderListaSospesi();
+        var cliente=state.clienti.find(function(c){return c.id===state.selectedClienteId;});
+        if(cliente) renderClienteDetail();
+      };
+    });
+  }
+
+  // ---------- impostazioni ----------
+  function renderImpostazioni(){
+    if(!isAdmin()){ state.view='clienti'; return render(); }
+    root.innerHTML = topbarHtml()+
+      '<div class="back-link" id="backToList">&larr; Torna all\'elenco</div>'+
+      '<div class="panel"><h2>Impostazioni \u2014 soglie di ritardo</h2>'+
+      '<div class="field-row"><div class="field"><label class="field-label">Dilazioni \u2014 giorni per giallo</label><input type="number" min="0" id="stDilMid" value="'+settings.dilazioneMidGiorni+'"></div>'+
+      '<div class="field"><label class="field-label">Dilazioni \u2014 giorni per rosso</label><input type="number" min="1" id="stDilLate" value="'+settings.dilazioneLateGiorni+'"></div></div>'+
+      '<div class="field-row"><div class="field"><label class="field-label">Finanziamenti \u2014 giorni per arancione</label><input type="number" min="1" id="stFinMid" value="'+settings.finanziamentoMidGiorni+'"></div>'+
+      '<div class="field"><label class="field-label">Finanziamenti \u2014 giorni per rosso</label><input type="number" min="1" id="stFinLate" value="'+settings.finanziamentoLateGiorni+'"></div></div>'+
+      (state.authError?'<div class="error-msg">'+state.authError+'</div>':'')+
+      '<div class="panel-actions"><button class="btn" id="btnSalvaImpostazioni">Salva impostazioni</button></div></div>';
+    wireTopbarSettings();
+    document.getElementById('backToList').onclick=function(){ state.view='clienti'; render(); };
+    document.getElementById('btnSalvaImpostazioni').onclick=async function(){
+      var dilMid=Number(document.getElementById('stDilMid').value);
+      var dilLate=Number(document.getElementById('stDilLate').value);
+      var mid=Number(document.getElementById('stFinMid').value);
+      var late=Number(document.getElementById('stFinLate').value);
+      state.authError='';
+      if(dilMid<0||!dilLate||dilLate<=dilMid){ state.authError='Valori dilazioni non validi.'; return renderImpostazioni(); }
+      if(!mid||mid<1||!late||late<=mid){ state.authError='Valori finanziamenti non validi.'; return renderImpostazioni(); }
+      settings={ dilazioneMidGiorni:dilMid, dilazioneLateGiorni:dilLate, finanziamentoMidGiorni:mid, finanziamentoLateGiorni:late };
+      await saveSettings();
+      state.view='clienti'; render();
+    };
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
