@@ -159,6 +159,18 @@
   function isAdmin(){ return !!(state.profile && state.profile.is_admin); }
   function currentName(){ return state.profile ? state.profile.nome : ''; }
 
+  // ---------- registro movimenti ----------
+  function clienteDi(x){ if(!x) return null; if(typeof x==='object') return x; return state.clienti.find(function(c){return c.id===x;})||null; }
+  function rawSospeso(s){ return { id:s.id, cliente_id:s.clienteId, descrizione:s.descrizione, nota:s.nota, tipo:s.tipo, data_apertura:s.dataApertura, scadenza:s.scadenza, importo_iniziale:s.importoIniziale, bonifico:s.bonifico, creato_da:s.creatoDa,
+    pagamenti:(s.pagamenti||[]).map(function(p){return {id:p.id, importo:p.importo, data:p.data, metodo:p.metodo};}) }; }
+  function rawCliente(c){ return { id:c.id, nome:c.nome, cognome:c.cognome, telefono:c.telefono, paese:c.paese, indirizzo:c.indirizzo, fatturazione:c.fatturazione, note:c.note, creato_da:c.creatoDa, created_at:c.createdAt }; }
+  async function logMov(tipo, cliente, descrizione, importo, dati){
+    try{
+      var c=clienteDi(cliente);
+      await sb.from('movimenti').insert({ tipo:tipo, cliente_id:c?c.id:null, cliente_nome:c?nomeCompleto(c):'', descrizione:descrizione||'', importo:(importo==null?null:importo), dati:dati||null, creato_da:currentName() });
+    }catch(e){}
+  }
+
   // ---------- mappatura righe database <-> oggetti app ----------
   function mapCliente(r){ return { id:r.id, nome:r.nome||'', cognome:r.cognome||'', telefono:r.telefono||'', paese:r.paese||'', indirizzo:r.indirizzo||'', fatturazione:r.fatturazione||'', note:r.note||'', creatoDa:r.creato_da||'', createdAt:r.created_at }; }
   function mapPagamento(r){ return { id:r.id, importo:Number(r.importo), data:r.data, metodo:r.metodo||'' }; }
@@ -314,6 +326,7 @@
     if(state.view==='clienti') return renderClienti();
     if(state.view==='cliente') return renderClienteDetail();
     if(state.view==='impostazioni') return renderImpostazioni();
+    if(state.view==='movimenti') return renderMovimenti();
   }
 
   function renderLogin(){
@@ -348,12 +361,14 @@
       '<div class="brand" style="display:flex; align-items:center; gap:12px;"><img src="'+LOGO_B64+'" alt="La Corte Inglese" style="height:38px;"><div><h1>Quaderno dei Sospesi</h1><div class="sub">registro clienti e crediti</div></div></div>'+
       '<div style="display:flex; align-items:center; gap:10px;">'+
         '<span class="meta-line">'+escapeHtml(currentName())+' \u00b7 <span id="btnLogout" style="cursor:pointer; text-decoration:underline;">esci</span></span>'+
+        '<button class="btn secondary small" id="btnMovimenti">\ud83d\udccb Movimenti</button>'+
         (isAdmin() ? '<button class="btn secondary small" id="btnImpostazioni">\u2699 Admin</button>' : '')+
       '</div>'+
     '</div>';
   }
   function wireTopbarSettings(){
     var b=document.getElementById('btnImpostazioni'); if(b) b.onclick=function(){ state.view='impostazioni'; render(); };
+    var m=document.getElementById('btnMovimenti'); if(m) m.onclick=function(){ state.view='movimenti'; render(); };
     var l=document.getElementById('btnLogout'); if(l) l.onclick=async function(){ await sb.auth.signOut(); state.session=null; state.profile=null; state.view='login'; render(); };
   }
 
@@ -472,6 +487,7 @@
         var ins = await sb.from('pagamenti').insert({ sospeso_id:sid, importo:importo, data:todayISO(), metodo:'bonifico' }).select().single();
         if(ins.error) return;
         s.pagamenti.push(mapPagamento(ins.data));
+        logMov('pagamento', s.clienteId, 'Bonifico confermato su: '+(s.descrizione||'sospeso'), importo, null);
         renderBonificoPanel();
         renderClienti();
       };
@@ -545,6 +561,7 @@
       if(ins.error){ state.authError='Errore nel salvataggio: '+ins.error.message; return renderFormCliente(); }
       var cliente = mapCliente(ins.data);
       state.clienti.unshift(cliente);
+      logMov('cliente_creato', cliente, 'Nuovo cliente', null, null);
       state.formClienteOpen=false; state.formClienteAltriOpen=false;
       state.formClienteDraft={nome:'',cognome:'',telefono:'',paese:'',indirizzo:'',fatturazione:'',note:''};
       state.selectedClienteId = cliente.id;
@@ -614,8 +631,10 @@
         var patch = { nome:nome, cognome:document.getElementById('ecCognome').value.trim(), telefono:document.getElementById('ecTelefono').value.trim(),
           paese:document.getElementById('ecPaese').value.trim(), indirizzo:document.getElementById('ecIndirizzo').value.trim(),
           fatturazione:document.getElementById('ecFatturazione').value.trim(), note:document.getElementById('ecNote').value.trim() };
+        var prima = rawCliente(cliente);
         var upd = await sb.from('clienti').update(patch).eq('id',cliente.id);
         if(upd.error){ state.authError='Errore: '+upd.error.message; return renderClienteDetail(); }
+        logMov('cliente_modificato', cliente, 'Dati cliente modificati', null, {prima:prima, dopo:patch});
         Object.assign(cliente, patch);
         state.editClienteOpen=false; state.authError='';
         renderClienteDetail();
@@ -653,7 +672,9 @@
     };
     document.getElementById('btnEliminaCliente').onclick=async function(){
       if(!confirm('Eliminare definitivamente questo cliente e tutta la sua storia?')) return;
+      var snapC = { cliente:rawCliente(cliente), sospesi:state.sospesi.filter(function(s){return s.clienteId===cliente.id;}).map(rawSospeso), solleciti:state.solleciti.filter(function(s){return s.clienteId===cliente.id;}).map(function(x){return {id:x.id, cliente_id:x.clienteId, data:x.data, tipo:x.tipo, esito:x.esito, nota:x.nota};}) };
       await sb.from('clienti').delete().eq('id',cliente.id);
+      await logMov('cliente_eliminato', {id:null,nome:cliente.nome,cognome:cliente.cognome}, 'Cliente eliminato con tutta la sua storia', null, snapC);
       state.clienti = state.clienti.filter(function(c){return c.id!==cliente.id;});
       state.sospesi = state.sospesi.filter(function(s){return s.clienteId!==cliente.id;});
       state.solleciti = state.solleciti.filter(function(s){return s.clienteId!==cliente.id;});
@@ -693,12 +714,14 @@
       var tipo=document.getElementById('solTipo').value, esito=document.getElementById('solEsito').value;
       var nota=document.getElementById('solNota').value.trim();
       var ins = await sb.from('solleciti').insert({ cliente_id:cliente.id, data:data, tipo:tipo, esito:esito, nota:nota }).select().single();
-      if(!ins.error){ state.solleciti.unshift(mapSollecito(ins.data)); renderSollecitiPanel(cliente); }
+      if(!ins.error){ state.solleciti.unshift(mapSollecito(ins.data)); logMov('sollecito', cliente, 'Sollecito '+tipo+(esito?' ('+esito+')':'')+(nota?': '+nota:''), null, null); renderSollecitiPanel(cliente); }
     };
     document.querySelectorAll('[data-rm-sollecito]').forEach(function(b){
       b.onclick=async function(){
         var sid=b.getAttribute('data-rm-sollecito');
+        var sol=state.solleciti.find(function(x){return x.id===sid;});
         await sb.from('solleciti').delete().eq('id',sid);
+        if(sol) logMov('sollecito_eliminato', cliente, 'Sollecito eliminato ('+sol.tipo+' del '+fmtDate(sol.data)+')', null, {row:{id:sol.id, cliente_id:sol.clienteId, data:sol.data, tipo:sol.tipo, esito:sol.esito, nota:sol.nota}});
         state.solleciti = state.solleciti.filter(function(s){return s.id!==sid;});
         renderSollecitiPanel(cliente);
       };
@@ -753,6 +776,7 @@
       }).select('*, pagamenti(*)').single();
       if(ins.error){ state.authError='Errore: '+ins.error.message; return renderFormSospeso(); }
       state.sospesi.unshift(mapSospeso(ins.data));
+      logMov('sospeso_creato', state.selectedClienteId, 'Nuovo sospeso: '+(descrizione||'senza descrizione'), importo, null);
       state.formSospesoOpen=false;
       state.formSospesoDraft={descrizione:'',importo:'',dataApertura:'',scadenza:'',tipo:'dilazione',bonifico:false,nota:''};
       renderFormSospeso(); renderListaSospesi();
@@ -849,6 +873,7 @@
         var s=state.sospesi.find(function(x){return x.id===sid;});
         var nomeVoce=(s&&s.descrizione)?s.descrizione:'questo sospeso';
         if(!confirm('Eliminare definitivamente "'+nomeVoce+'"? Se aveva dei pagamenti registrati, verranno cancellati anche quelli. L\'operazione non è annullabile.')) return;
+        if(s) await logMov('sospeso_eliminato', s.clienteId, 'Sospeso eliminato: '+nomeVoce, s.importoIniziale, {row:rawSospeso(s)});
         await sb.from('sospesi').delete().eq('id',sid);
         state.sospesi = state.sospesi.filter(function(x){return x.id!==sid;});
         renderListaSospesi();
@@ -892,8 +917,10 @@
         if(!importo||importo<=0){ state.authError='Inserisci un importo valido.'; return renderListaSospesi(); }
         if(importo<pagatoFinora){ state.authError='L\'importo non pu\u00f2 essere inferiore a quanto gi\u00e0 pagato ('+fmtEUR(pagatoFinora)+').'; return renderListaSospesi(); }
         if(hasScadenza && !scadenza){ state.authError='Inserisci una scadenza, o disattiva l\'opzione.'; return renderListaSospesi(); }
+        var prima = { descrizione:s.descrizione, importo_iniziale:s.importoIniziale, data_apertura:s.dataApertura, scadenza:s.scadenza, tipo:s.tipo, bonifico:s.bonifico, nota:s.nota };
         var upd = await sb.from('sospesi').update({ descrizione:descrizione, importo_iniziale:importo, data_apertura:dataApertura, scadenza:scadenza, tipo:tipo, bonifico:bonifico, nota:nota }).eq('id',sid);
         if(upd.error){ state.authError='Errore: '+upd.error.message; return renderListaSospesi(); }
+        logMov('sospeso_modificato', s.clienteId, 'Sospeso modificato: '+(descrizione||s.descrizione), importo, {prima:prima});
         s.descrizione=descrizione; s.importoIniziale=importo; s.dataApertura=dataApertura; s.scadenza=scadenza; s.tipo=tipo; s.bonifico=bonifico; s.nota=nota;
         state.editSospesoId=null;
         renderListaSospesi();
@@ -915,6 +942,7 @@
         if(ins.error) return;
         var s=state.sospesi.find(function(x){return x.id===sid;});
         s.pagamenti.push(mapPagamento(ins.data));
+        logMov('pagamento', s.clienteId, 'Pagamento su: '+(s.descrizione||'sospeso')+(metodo?' ('+metodo+')':''), importo, null);
         renderListaSospesi();
         var cliente=state.clienti.find(function(c){return c.id===state.selectedClienteId;});
         if(cliente) renderClienteDetail();
@@ -927,6 +955,7 @@
         await sb.from('pagamenti').update({ data:inp.value }).eq('id',parts[1]);
         var s=state.sospesi.find(function(x){return x.id===parts[0];});
         var p=s.pagamenti.find(function(x){return x.id===parts[1];});
+        logMov('pagamento_modificato', s.clienteId, 'Data pagamento cambiata in '+fmtDate(inp.value)+' (prima '+fmtDate(p.data)+')', p.importo, null);
         p.data=inp.value;
         renderListaSospesi();
       };
@@ -937,6 +966,7 @@
         await sb.from('pagamenti').update({ metodo:sel.value }).eq('id',parts[1]);
         var s=state.sospesi.find(function(x){return x.id===parts[0];});
         var p=s.pagamenti.find(function(x){return x.id===parts[1];});
+        logMov('pagamento_modificato', s.clienteId, 'Metodo pagamento cambiato in '+(sel.value||'non indicato'), p.importo, null);
         p.metodo=sel.value;
         renderListaSospesi();
       };
@@ -944,8 +974,10 @@
     document.querySelectorAll('[data-rm-pag]').forEach(function(b){
       b.onclick=async function(){
         var parts=b.getAttribute('data-rm-pag').split('|');
-        await sb.from('pagamenti').delete().eq('id',parts[1]);
         var s=state.sospesi.find(function(x){return x.id===parts[0];});
+        var pg=s.pagamenti.find(function(x){return x.id===parts[1];});
+        if(pg) await logMov('pagamento_eliminato', s.clienteId, 'Pagamento eliminato su: '+(s.descrizione||'sospeso')+' ('+fmtDate(pg.data)+')', pg.importo, {row:{id:pg.id, sospeso_id:s.id, importo:pg.importo, data:pg.data, metodo:pg.metodo}});
+        await sb.from('pagamenti').delete().eq('id',parts[1]);
         s.pagamenti=s.pagamenti.filter(function(p){return p.id!==parts[1];});
         renderListaSospesi();
         var cliente=state.clienti.find(function(c){return c.id===state.selectedClienteId;});
@@ -955,6 +987,95 @@
   }
 
   // ---------- impostazioni ----------
+
+  // ---------- pagina movimenti ----------
+  var MOV_LABEL = { cliente_creato:'Cliente creato', cliente_modificato:'Cliente modificato', cliente_eliminato:'Cliente eliminato', sospeso_creato:'Sospeso creato', sospeso_modificato:'Sospeso modificato', sospeso_eliminato:'Sospeso eliminato', pagamento:'Pagamento', pagamento_modificato:'Pagamento modificato', pagamento_eliminato:'Pagamento eliminato', sollecito:'Sollecito', sollecito_eliminato:'Sollecito eliminato', ripristino:'Ripristino' };
+  var movState = { data:'', rows:[], msg:'' };
+  function localISO(d){ var m=d.getMonth()+1, g=d.getDate(); return d.getFullYear()+'-'+(m<10?'0':'')+m+'-'+(g<10?'0':'')+g; }
+  function spostaGiorno(iso,delta){ var p=iso.split('-'); var d=new Date(Number(p[0]),Number(p[1])-1,Number(p[2])+delta); return localISO(d); }
+  async function renderMovimenti(){
+    if(!movState.data) movState.data = localISO(new Date());
+    var p=movState.data.split('-');
+    var da=new Date(Number(p[0]),Number(p[1])-1,Number(p[2]),0,0,0);
+    var a=new Date(Number(p[0]),Number(p[1])-1,Number(p[2])+1,0,0,0);
+    var r = await sb.from('movimenti').select('*').gte('created_at',da.toISOString()).lt('created_at',a.toISOString()).order('created_at',{ascending:false});
+    movState.rows = r.data||[];
+    var errore = r.error ? 'Impossibile leggere i movimenti: '+r.error.message : '';
+    var tot = movState.rows.length;
+    var righe = movState.rows.map(function(m){
+      var ora = new Date(m.created_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+      var cl = m.cliente_id ? state.clienti.find(function(c){return c.id===m.cliente_id;}) : null;
+      var nomeCl = m.cliente_nome ? (cl ? '<span class="mov-cli" data-mov-cliente="'+cl.id+'" style="cursor:pointer; text-decoration:underline;">'+escapeHtml(m.cliente_nome)+'</span>' : escapeHtml(m.cliente_nome)) : '';
+      var ripristinabile = /_eliminato$/.test(m.tipo) && m.dati && !m.dati.ripristinato;
+      return '<div class="mov-row" style="display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-bottom:1px dashed var(--paper-line); flex-wrap:wrap;">'+
+        '<span class="mono" style="min-width:48px;">'+ora+'</span>'+
+        '<span style="flex:1; min-width:220px;"><strong>'+escapeHtml(MOV_LABEL[m.tipo]||m.tipo)+'</strong>'+(nomeCl?' · '+nomeCl:'')+'<div class="meta-line">'+escapeHtml(m.descrizione||'')+'</div><div class="meta-line">Eseguito da: '+escapeHtml(m.creato_da||'?')+(m.dati&&m.dati.ripristinato?' · <em>ripristinato</em>':'')+'</div></span>'+
+        (m.importo!=null?'<span class="mono">'+fmtEUR(m.importo)+'</span>':'')+
+        (ripristinabile?'<button class="btn secondary small" data-ripristina="'+m.id+'">Ripristina</button>':'')+
+      '</div>';
+    }).join('');
+    root.innerHTML = topbarHtml()+
+      '<div class="back-link" id="backToList">&larr; Torna all\'elenco</div>'+
+      '<div class="panel"><h2>Movimenti</h2>'+
+      '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:14px;">'+
+        '<button class="btn secondary small" id="movPrev">&larr;</button>'+
+        '<input type="date" id="movData" value="'+movState.data+'" style="max-width:170px;">'+
+        '<button class="btn secondary small" id="movNext">&rarr;</button>'+
+        '<button class="btn secondary small" id="movOggi">Oggi</button>'+
+        '<span class="meta-line">'+tot+' movimenti</span>'+
+      '</div>'+
+      (errore?'<div class="error-msg">'+escapeHtml(errore)+'</div>':'')+
+      (movState.msg?'<div class="meta-line" style="margin-bottom:10px;">'+escapeHtml(movState.msg)+'</div>':'')+
+      (righe || (errore?'':'<div class="meta-line">Nessun movimento in questo giorno.</div>'))+
+      '</div>';
+    movState.msg='';
+    wireTopbarSettings();
+    document.getElementById('backToList').onclick=function(){ state.view='clienti'; render(); };
+    document.getElementById('movData').onchange=function(){ if(this.value){ movState.data=this.value; renderMovimenti(); } };
+    document.getElementById('movPrev').onclick=function(){ movState.data=spostaGiorno(movState.data,-1); renderMovimenti(); };
+    document.getElementById('movNext').onclick=function(){ movState.data=spostaGiorno(movState.data,1); renderMovimenti(); };
+    document.getElementById('movOggi').onclick=function(){ movState.data=localISO(new Date()); renderMovimenti(); };
+    document.querySelectorAll('[data-mov-cliente]').forEach(function(sp){ sp.onclick=function(){ state.selectedClienteId=sp.getAttribute('data-mov-cliente'); state.view='cliente'; render(); }; });
+    document.querySelectorAll('[data-ripristina]').forEach(function(b){
+      b.onclick=async function(){
+        var m=movState.rows.find(function(x){return x.id===b.getAttribute('data-ripristina');});
+        if(!m) return;
+        if(!confirm('Ripristinare questo elemento?')) return;
+        var esito = await ripristina(m);
+        movState.msg = esito;
+        renderMovimenti();
+      };
+    });
+  }
+  async function ripristina(m){
+    var d=m.dati||{}, e;
+    if(m.tipo==='pagamento_eliminato'){
+      e=(await sb.from('pagamenti').insert(d.row)).error;
+    } else if(m.tipo==='sollecito_eliminato'){
+      e=(await sb.from('solleciti').insert(d.row)).error;
+    } else if(m.tipo==='sospeso_eliminato'){
+      var row=Object.assign({},d.row); var pags=row.pagamenti||[]; delete row.pagamenti;
+      e=(await sb.from('sospesi').insert(row)).error;
+      if(!e && pags.length){ e=(await sb.from('pagamenti').insert(pags.map(function(x){return Object.assign({sospeso_id:row.id},x);}))).error; }
+    } else if(m.tipo==='cliente_eliminato'){
+      e=(await sb.from('clienti').insert(d.cliente)).error;
+      if(!e){
+        for(var i=0;i<(d.sospesi||[]).length;i++){
+          var so=Object.assign({},d.sospesi[i]); var pg=so.pagamenti||[]; delete so.pagamenti;
+          var r1=await sb.from('sospesi').insert(so); if(r1.error){ e=r1.error; break; }
+          if(pg.length){ var r2=await sb.from('pagamenti').insert(pg.map(function(x){return Object.assign({sospeso_id:so.id},x);})); if(r2.error){ e=r2.error; break; } }
+        }
+        if(!e && (d.solleciti||[]).length){ e=(await sb.from('solleciti').insert(d.solleciti)).error; }
+      }
+    } else { return 'Questo tipo di movimento non si può ripristinare.'; }
+    if(e) return 'Ripristino non riuscito: '+e.message+' (forse esiste già, oppure manca il cliente o il sospeso collegato).';
+    var nuovi=Object.assign({},d,{ripristinato:true});
+    await sb.from('movimenti').update({dati:nuovi}).eq('id',m.id);
+    await logMov('ripristino', d.cliente?{id:d.cliente.id,nome:d.cliente.nome,cognome:d.cliente.cognome}:(d.row&&d.row.cliente_id?d.row.cliente_id:(m.cliente_id||null)), 'Ripristinato: '+(m.descrizione||m.tipo), m.importo, null);
+    await loadAll();
+    return 'Elemento ripristinato.';
+  }
+
   function renderImpostazioni(){
     if(!isAdmin()){ state.view='clienti'; return render(); }
     root.innerHTML = topbarHtml()+
