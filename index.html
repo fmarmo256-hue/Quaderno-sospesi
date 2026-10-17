@@ -161,7 +161,7 @@
 
   // ---------- registro movimenti ----------
   function clienteDi(x){ if(!x) return null; if(typeof x==='object') return x; return state.clienti.find(function(c){return c.id===x;})||null; }
-  function rawSospeso(s){ return { id:s.id, cliente_id:s.clienteId, descrizione:s.descrizione, nota:s.nota, tipo:s.tipo, data_apertura:s.dataApertura, scadenza:s.scadenza, importo_iniziale:s.importoIniziale, bonifico:s.bonifico, creato_da:s.creatoDa,
+  function rawSospeso(s){ return { id:s.id, cliente_id:s.clienteId, descrizione:s.descrizione, nota:s.nota, tipo:s.tipo, data_apertura:s.dataApertura, scadenza:s.scadenza, importo_iniziale:s.importoIniziale, bonifico:s.bonifico, cadenza_giorni:s.cadenza||null, creato_da:s.creatoDa,
     pagamenti:(s.pagamenti||[]).map(function(p){return {id:p.id, importo:p.importo, data:p.data, metodo:p.metodo};}) }; }
   function rawCliente(c){ return { id:c.id, nome:c.nome, cognome:c.cognome, telefono:c.telefono, paese:c.paese, indirizzo:c.indirizzo, fatturazione:c.fatturazione, note:c.note, creato_da:c.creatoDa, created_at:c.createdAt }; }
   async function logMov(tipo, cliente, descrizione, importo, dati){
@@ -174,11 +174,19 @@
   // ---------- mappatura righe database <-> oggetti app ----------
   function mapCliente(r){ return { id:r.id, nome:r.nome||'', cognome:r.cognome||'', telefono:r.telefono||'', paese:r.paese||'', indirizzo:r.indirizzo||'', fatturazione:r.fatturazione||'', note:r.note||'', creatoDa:r.creato_da||'', createdAt:r.created_at }; }
   function mapPagamento(r){ return { id:r.id, importo:Number(r.importo), data:r.data, metodo:r.metodo||'' }; }
-  function mapSospeso(r){ return { id:r.id, clienteId:r.cliente_id, descrizione:r.descrizione||'', nota:r.nota||'', tipo:r.tipo||'dilazione', dataApertura:r.data_apertura, scadenza:r.scadenza, importoIniziale:Number(r.importo_iniziale), bonifico:!!r.bonifico, creatoDa:r.creato_da||'', pagamenti:(r.pagamenti||[]).map(mapPagamento) }; }
+  function mapSospeso(r){ return { id:r.id, clienteId:r.cliente_id, descrizione:r.descrizione||'', nota:r.nota||'', tipo:r.tipo||'dilazione', dataApertura:r.data_apertura, scadenza:r.scadenza, importoIniziale:Number(r.importo_iniziale), bonifico:!!r.bonifico, cadenza:r.cadenza_giorni||null, creatoDa:r.creato_da||'', pagamenti:(r.pagamenti||[]).map(mapPagamento) }; }
   function mapSollecito(r){ return { id:r.id, clienteId:r.cliente_id, data:r.data, tipo:r.tipo, esito:r.esito, nota:r.nota||'' }; }
 
   // ---------- persistenza (Supabase) ----------
+  var GIORNI_RIPRISTINO = 5;
+  async function pulisciMovimenti(){
+    try{
+      var limite = new Date(Date.now()-GIORNI_RIPRISTINO*86400000).toISOString();
+      await sb.from('movimenti').update({dati:null}).lt('created_at',limite).not('dati','is',null);
+    }catch(e){}
+  }
   async function loadAll(){
+    pulisciMovimenti();
     var c = await sb.from('clienti').select('*').order('created_at',{ascending:false});
     state.clienti = (c.data||[]).map(mapCliente);
     var s = await sb.from('sospesi').select('*, pagamenti(*)').order('created_at',{ascending:false});
@@ -208,12 +216,22 @@
   function saldoSospeso(s){ var pagato=(s.pagamenti||[]).reduce(function(a,p){return a+p.importo;},0); return Math.max(s.importoIniziale-pagato,0); }
   function saldoCliente(clienteId){ return state.sospesi.filter(function(s){return s.clienteId===clienteId;}).reduce(function(a,s){return a+saldoSospeso(s);},0); }
   function ultimoPagamentoSospeso(s){ if(!s.pagamenti||!s.pagamenti.length) return null; return s.pagamenti.reduce(function(max,p){return (!max||p.data>max)?p.data:max;},null); }
+  function aggiungiGiorni(iso,n){ var p=iso.split('-'); var d=new Date(Number(p[0]),Number(p[1])-1,Number(p[2])+n); var m=d.getMonth()+1, g=d.getDate(); return d.getFullYear()+'-'+(m<10?'0':'')+m+'-'+(g<10?'0':'')+g; }
+  function prossimaRata(s){ if(s.tipo!=='finanziamento'||!s.cadenza) return null; return aggiungiGiorni(ultimoPagamentoSospeso(s)||s.dataApertura, s.cadenza); }
   function rankLivello(l){ return l==='late'?2:(l==='mid'?1:0); }
   function statoSospeso(s){
     var saldo = saldoSospeso(s);
     if(saldo<=0) return null;
     if(s.tipo==='finanziamento'){
       var ultimo = ultimoPagamentoSospeso(s);
+      var prossima = prossimaRata(s);
+      if(prossima){
+        var gr = giorniDa(prossima), lv, tx;
+        if(gr>0){ lv='late'; tx='rata scaduta da '+gr+' gg'; }
+        else if(gr>=-2){ lv='mid'; tx = gr===0?'rata in scadenza oggi':'rata tra '+(-gr)+' gg'; }
+        else { lv='ok'; tx='prossima rata tra '+(-gr)+' gg'; }
+        return { giorni:gr, livello:lv, testo:tx };
+      }
       var rif = ultimo || s.dataApertura;
       var giorni = giorniDa(rif);
       var livello = giorni>settings.finanziamentoLateGiorni?'late':(giorni>settings.finanziamentoMidGiorni?'mid':'ok');
@@ -737,6 +755,7 @@
         '<option value="dilazione" '+(d.tipo!=='finanziamento'?'selected':'')+'>Dilazione breve (saldo in un\'unica soluzione)</option>'+
         '<option value="finanziamento" '+(d.tipo==='finanziamento'?'selected':'')+'>Finanziamento a rate (pagamenti mensili)</option>'+
       '</select></div></div>'+
+      (d.tipo==='finanziamento'?'<div class="field-row"><div class="field"><label class="field-label">Cadenza rate: ogni quanti giorni paga</label><input type="number" min="1" step="1" id="fCadenza" value="'+(d.cadenza||30)+'"></div></div>':'')+
       '<div class="field-row"><div class="field"><label class="field-label">Prodotto acquistato</label><input type="text" id="fDescrizione" value="'+escapeHtml(d.descrizione)+'"></div></div>'+
       '<div class="field-row"><div class="field"><label class="field-label">Importo iniziale</label><input type="number" step="0.01" min="0" id="fImporto" value="'+escapeHtml(d.importo)+'"></div>'+
       '<div class="field"><label class="field-label">Data apertura</label><input type="date" id="fDataApertura" value="'+(d.dataApertura||todayISO())+'"></div></div>'+
@@ -748,6 +767,7 @@
       '<div class="panel-actions"><button class="btn secondary" id="btnAnnullaSospeso">Annulla</button><button class="btn" id="btnSalvaSospeso">Salva sospeso</button></div></div>';
     document.getElementById('fTipo').onchange=function(e){ state.formSospesoDraft.tipo=e.target.value; renderFormSospeso(); };
     document.getElementById('fDescrizione').oninput=function(e){ state.formSospesoDraft.descrizione=e.target.value; };
+    var inCad=document.getElementById('fCadenza'); if(inCad) inCad.oninput=function(e){ state.formSospesoDraft.cadenza=e.target.value; };
     document.getElementById('fImporto').oninput=function(e){ state.formSospesoDraft.importo=e.target.value; };
     document.getElementById('fDataApertura').oninput=function(e){ state.formSospesoDraft.dataApertura=e.target.value; };
     document.getElementById('fNota').oninput=function(e){ state.formSospesoDraft.nota=e.target.value; };
@@ -765,6 +785,7 @@
       var dataApertura=document.getElementById('fDataApertura').value||todayISO();
       var scadenza=state.formHasScadenza?document.getElementById('fScadenza').value:null;
       var tipo=document.getElementById('fTipo').value;
+      var cadEl=document.getElementById('fCadenza'); var cadenza=(tipo==='finanziamento'&&cadEl)?(parseInt(cadEl.value,10)||30):null;
       var bonifico=document.getElementById('fBonifico').checked;
       var nota=document.getElementById('fNota').value.trim();
       state.authError='';
@@ -772,7 +793,7 @@
       if(state.formHasScadenza && !scadenza){ state.authError='Inserisci una scadenza, o disattiva l\'opzione.'; return renderFormSospeso(); }
       var ins = await sb.from('sospesi').insert({
         cliente_id: state.selectedClienteId, descrizione:descrizione, nota:nota, tipo:tipo,
-        data_apertura:dataApertura, scadenza:scadenza, importo_iniziale:importo, bonifico:bonifico, creato_da: currentName()
+        data_apertura:dataApertura, scadenza:scadenza, importo_iniziale:importo, bonifico:bonifico, cadenza_giorni:cadenza, creato_da: currentName()
       }).select('*, pagamenti(*)').single();
       if(ins.error){ state.authError='Errore: '+ins.error.message; return renderFormSospeso(); }
       state.sospesi.unshift(mapSospeso(ins.data));
@@ -807,6 +828,7 @@
           '<option value="dilazione" '+(d.tipo!=='finanziamento'?'selected':'')+'>Dilazione breve</option>'+
           '<option value="finanziamento" '+(d.tipo==='finanziamento'?'selected':'')+'>Finanziamento a rate</option>'+
         '</select></div></div>'+
+        (d.tipo==='finanziamento'?'<div class="field-row"><div class="field"><label class="field-label">Cadenza rate: ogni quanti giorni paga</label><input type="number" min="1" step="1" id="esCadenza" value="'+(d.cadenza||30)+'"></div></div>':'')+
         '<div class="field-row"><div class="field"><label class="field-label">Descrizione</label><input type="text" id="esDescrizione" value="'+escapeHtml(d.descrizione)+'"></div></div>'+
         '<div class="field-row"><div class="field"><label class="field-label">Importo iniziale</label><input type="number" step="0.01" min="0" id="esImporto" value="'+escapeHtml(d.importo)+'"></div>'+
         '<div class="field"><label class="field-label">Data apertura</label><input type="date" id="esDataApertura" value="'+(d.dataApertura||todayISO())+'"></div></div>'+
@@ -824,6 +846,7 @@
     return '<div class="sospeso-card '+(s.tipo==='finanziamento'?'tipo-finanziamento':'')+'">'+
       '<div class="sospeso-head"><div><strong>'+escapeHtml(s.descrizione||'Sospeso')+(s.bonifico?' <span class="bonifico-tag" title="In attesa di bonifico bancario">\ud83c\udfe6</span>':'')+'</strong>'+
       '<div class="meta-line">aperto il '+fmtDate(s.dataApertura)+(s.scadenza?' &middot; scadenza '+fmtDate(s.scadenza):'')+'</div>'+
+      (prossimaRata(s)&&saldoSospeso(s)>0?'<div class="meta-line">\ud83d\udd01 Rata ogni '+s.cadenza+' gg &middot; prossima entro '+fmtDate(prossimaRata(s))+'</div>':'')+
       (s.nota?'<div class="meta-line">\ud83d\udcdd '+escapeHtml(s.nota)+'</div>':'')+
       (s.creatoDa?'<div class="meta-line">Registrato da: '+escapeHtml(s.creatoDa)+'</div>':'')+
       '</div><div style="display:flex; align-items:center; gap:8px;"><button class="btn secondary small" data-edit-sospeso="'+s.id+'">Modifica</button>'+
@@ -863,7 +886,7 @@
         var sid=b.getAttribute('data-edit-sospeso');
         var s=state.sospesi.find(function(x){return x.id===sid;});
         state.editSospesoId=sid;
-        state.editSospesoDraft={descrizione:s.descrizione||'',importo:s.importoIniziale,dataApertura:s.dataApertura,scadenza:s.scadenza||'',hasScadenza:!!s.scadenza,tipo:s.tipo||'dilazione',bonifico:!!s.bonifico,nota:s.nota||''};
+        state.editSospesoDraft={descrizione:s.descrizione||'',importo:s.importoIniziale,dataApertura:s.dataApertura,scadenza:s.scadenza||'',hasScadenza:!!s.scadenza,tipo:s.tipo||'dilazione',cadenza:s.cadenza||30,bonifico:!!s.bonifico,nota:s.nota||''};
         state.authError=''; renderListaSospesi();
       };
     });
@@ -883,6 +906,7 @@
     });
     if(state.editSospesoId){
       var selEs=document.getElementById('esTipo'); if(selEs) selEs.onchange=function(e){ state.editSospesoDraft.tipo=e.target.value; renderListaSospesi(); };
+      var inCadEs=document.getElementById('esCadenza'); if(inCadEs) inCadEs.oninput=function(e){ state.editSospesoDraft.cadenza=e.target.value; };
       var inDescEs=document.getElementById('esDescrizione'); if(inDescEs) inDescEs.oninput=function(e){ state.editSospesoDraft.descrizione=e.target.value; };
       var inImpEs=document.getElementById('esImporto'); if(inImpEs) inImpEs.oninput=function(e){ state.editSospesoDraft.importo=e.target.value; };
       var inDataEs=document.getElementById('esDataApertura'); if(inDataEs) inDataEs.oninput=function(e){ state.editSospesoDraft.dataApertura=e.target.value; };
@@ -910,6 +934,7 @@
         var hasScadenza=document.getElementById('esHasScadenza').checked;
         var scadenza=hasScadenza?document.getElementById('esScadenza').value:null;
         var tipo=document.getElementById('esTipo').value;
+        var cadEl2=document.getElementById('esCadenza'); var cadenza=(tipo==='finanziamento'&&cadEl2)?(parseInt(cadEl2.value,10)||30):null;
         var bonifico=document.getElementById('esBonifico').checked;
         var nota=document.getElementById('esNota').value.trim();
         var pagatoFinora=(s.pagamenti||[]).reduce(function(a,p){return a+p.importo;},0);
@@ -918,10 +943,10 @@
         if(importo<pagatoFinora){ state.authError='L\'importo non pu\u00f2 essere inferiore a quanto gi\u00e0 pagato ('+fmtEUR(pagatoFinora)+').'; return renderListaSospesi(); }
         if(hasScadenza && !scadenza){ state.authError='Inserisci una scadenza, o disattiva l\'opzione.'; return renderListaSospesi(); }
         var prima = { descrizione:s.descrizione, importo_iniziale:s.importoIniziale, data_apertura:s.dataApertura, scadenza:s.scadenza, tipo:s.tipo, bonifico:s.bonifico, nota:s.nota };
-        var upd = await sb.from('sospesi').update({ descrizione:descrizione, importo_iniziale:importo, data_apertura:dataApertura, scadenza:scadenza, tipo:tipo, bonifico:bonifico, nota:nota }).eq('id',sid);
+        var upd = await sb.from('sospesi').update({ descrizione:descrizione, importo_iniziale:importo, data_apertura:dataApertura, scadenza:scadenza, tipo:tipo, bonifico:bonifico, nota:nota, cadenza_giorni:cadenza }).eq('id',sid);
         if(upd.error){ state.authError='Errore: '+upd.error.message; return renderListaSospesi(); }
         logMov('sospeso_modificato', s.clienteId, 'Sospeso modificato: '+(descrizione||s.descrizione), importo, {prima:prima});
-        s.descrizione=descrizione; s.importoIniziale=importo; s.dataApertura=dataApertura; s.scadenza=scadenza; s.tipo=tipo; s.bonifico=bonifico; s.nota=nota;
+        s.descrizione=descrizione; s.importoIniziale=importo; s.dataApertura=dataApertura; s.scadenza=scadenza; s.tipo=tipo; s.cadenza=cadenza; s.bonifico=bonifico; s.nota=nota;
         state.editSospesoId=null;
         renderListaSospesi();
         var cliente=state.clienti.find(function(c){return c.id===state.selectedClienteId;});
@@ -1006,12 +1031,16 @@
       var ora = new Date(m.created_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
       var cl = m.cliente_id ? state.clienti.find(function(c){return c.id===m.cliente_id;}) : null;
       var nomeCl = m.cliente_nome ? (cl ? '<span class="mov-cli" data-mov-cliente="'+cl.id+'" style="cursor:pointer; text-decoration:underline;">'+escapeHtml(m.cliente_nome)+'</span>' : escapeHtml(m.cliente_nome)) : '';
-      var ripristinabile = /_eliminato$/.test(m.tipo) && m.dati && !m.dati.ripristinato;
+      var fresco = (Date.now()-new Date(m.created_at).getTime()) < GIORNI_RIPRISTINO*86400000;
+      var eraEliminato = /_eliminato$/.test(m.tipo);
+      var ripristinabile = eraEliminato && fresco && m.dati && !m.dati.ripristinato;
+      var scaduto = eraEliminato && !fresco && !(m.dati&&m.dati.ripristinato);
       return '<div class="mov-row" style="display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-bottom:1px dashed var(--paper-line); flex-wrap:wrap;">'+
         '<span class="mono" style="min-width:48px;">'+ora+'</span>'+
         '<span style="flex:1; min-width:220px;"><strong>'+escapeHtml(MOV_LABEL[m.tipo]||m.tipo)+'</strong>'+(nomeCl?' · '+nomeCl:'')+'<div class="meta-line">'+escapeHtml(m.descrizione||'')+'</div><div class="meta-line">Eseguito da: '+escapeHtml(m.creato_da||'?')+(m.dati&&m.dati.ripristinato?' · <em>ripristinato</em>':'')+'</div></span>'+
         (m.importo!=null?'<span class="mono">'+fmtEUR(m.importo)+'</span>':'')+
         (ripristinabile?'<button class="btn secondary small" data-ripristina="'+m.id+'">Ripristina</button>':'')+
+        (scaduto?'<span class="meta-line">non ripristinabile (oltre '+GIORNI_RIPRISTINO+' giorni)</span>':'')+
       '</div>';
     }).join('');
     root.innerHTML = topbarHtml()+
