@@ -65,6 +65,33 @@
   .empty-state{color:var(--ink-soft); font-size:14px; padding:30px 0; text-align:center;}
   .row-btn{position:relative; overflow:hidden; display:flex; justify-content:space-between; align-items:center; gap:12px; width:100%; text-align:left; background:#fffdf7; border:1px solid var(--paper-line); border-left:4px solid var(--gold); padding:12px 14px; border-radius:3px; cursor:pointer;}
   .row-btn:hover{background:#f7f2e6;}
+  .row-btn:focus-visible{outline:2px solid var(--gold); outline-offset:1px;}
+  .row-btn[aria-expanded="true"]{background:#f7f2e6;}
+  .riepilogo-cliente{background:#fbf7ec; border:1px solid var(--paper-line); border-left:3px solid var(--gold); border-radius:0 0 4px 4px; padding:10px 14px 10px; margin:-1px 0 12px 0; font-size:13px; color:var(--ink-soft);}
+  .riep-strip{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+  .riep-chip{display:flex; flex-direction:column; gap:1px; padding:6px 12px; border-radius:4px; background:#fffdf7; border:1px solid var(--paper-line); min-width:120px;}
+  .riep-chip small{font-size:10px; text-transform:uppercase; letter-spacing:.05em; opacity:.7;}
+  .riep-chip strong{font-size:14px; color:var(--ink);}
+  .riep-chip.chip-red strong{color:var(--red);}
+  .riep-chip.chip-green strong{color:var(--green);}
+  .riep-cols{display:flex; gap:22px; flex-wrap:wrap;}
+  .riep-col{flex:1 1 260px; min-width:240px;}
+  .riep-col-pay{flex:1.3 1 320px;}
+  .riep-title{font-size:11px; text-transform:uppercase; letter-spacing:.05em; opacity:.75; margin-bottom:4px;}
+  .riep-sosp{padding:5px 0;}
+  .riep-sosp + .riep-sosp{border-top:1px dotted var(--paper-line); margin-top:3px; padding-top:8px;}
+  .riep-sosp strong{color:var(--ink);}
+  .riep-tipo{display:inline-block; min-width:14px; text-align:center; font-size:10px; border:1px solid var(--paper-line); border-radius:3px; padding:0 3px; opacity:.8;}
+  .riep-sub{margin-top:2px; padding-left:22px;}
+  .pay-table{display:flex; flex-direction:column;}
+  .pay-head, .pay-row{display:grid; grid-template-columns:78px 1fr 70px 104px; gap:8px; align-items:baseline; padding:3px 0;}
+  .pay-head{font-size:10px; text-transform:uppercase; letter-spacing:.05em; opacity:.6; border-bottom:1px solid var(--paper-line);}
+  .pay-row{border-bottom:1px dotted var(--paper-line);}
+  .pay-row:last-child{border-bottom:none;}
+  .pay-table .r{text-align:right;}
+  .pay-desc{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink);}
+  .pay-amt{font-family:'Courier New',monospace; font-weight:bold; color:var(--green);}
+  .riep-foot{display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-top:10px; padding-top:8px; border-top:1px solid var(--paper-line); font-size:12px;}
   .corner-bonifico{position:absolute; top:0; left:0; width:0; height:0; border-top:30px solid #6a3fa0; border-right:30px solid transparent;}
   .corner-bonifico-icon{position:absolute; top:2px; left:2px; font-size:12px; line-height:1;}
   .row-nome{font-weight:bold; font-size:15px; display:block;}
@@ -152,7 +179,7 @@
     editClienteOpen: false,
     search: '', filter: 'tutti', sortBy: 'apertura_asc', sortMenuOpen: false,
     viewMode: 'per-tipo', viewMenuOpen: false,
-    overduePanelOpen: false, bonificoPanelOpen: false, authError: ''
+    overduePanelOpen: false, bonificoPanelOpen: false, expandedClienteId: null, authError: ''
   };
 
   function nomeCompleto(c){ return (c.nome||'')+(c.cognome?' '+c.cognome:''); }
@@ -407,13 +434,93 @@
     var infoLine = info.length ? '<div class="meta-line">'+escapeHtml(info.join(' \u00b7 '))+'</div>' : '';
     var sol = ultimoSollecitoDettaglio(x.c.id);
     var solLine = '<div class="meta-line">'+(sol?'\ud83d\udd14 ultimo sollecito '+giorniDa(sol.data)+' gg fa \u00b7 '+ESITI_SOLLECITO[sol.esito]:'\ud83d\udd14 nessun sollecito registrato')+'</div>';
-    return '<button class="row-btn" data-cliente="'+x.c.id+'">'+
+    return '<div class="riga-wrap" data-wrap="'+x.c.id+'"><button class="row-btn" data-riga="'+x.c.id+'" aria-expanded="'+(state.expandedClienteId===x.c.id?'true':'false')+'">'+
       (haBonifico ? '<span class="corner-bonifico" title="Bonifico bancario da verificare"></span><span class="corner-bonifico-icon">\ud83c\udfe6</span>' : '')+
       '<div><span class="row-nome">'+escapeHtml(nomeCompleto(x.c))+'</span>'+infoLine+solLine+'</div>'+
       '<div class="row-side">'+tipiPills+dueBadge+
         '<span class="mono row-amt '+(saldato?'text-green':'text-red')+'">'+fmtEUR(x.saldo)+'</span>'+
         '<span class="stamp '+(saldato?'text-green':'text-red')+'">'+(saldato?'SALDATO':'APERTO')+'</span>'+
-      '</div></button>';
+      '</div></button>'+(state.expandedClienteId===x.c.id?renderRiepilogoCliente(x.c):'')+'</div>';
+  }
+
+  function renderRiepilogoCliente(c){
+    var miei = state.sospesi.filter(function(s){return s.clienteId===c.id;});
+    var aperti = miei.filter(function(s){return saldoSospeso(s)>0;});
+    var righeAperti = aperti.length ? aperti.map(function(s){
+      var extra = prossimaRata(s) ? 'prossima rata entro '+fmtDate(prossimaRata(s)) : (s.scadenza ? 'scadenza '+fmtDate(s.scadenza) : '');
+      return '<div class="riep-sosp">'+
+        '<div><span class="riep-tipo">'+(s.tipo==='finanziamento'?'F':'D')+'</span> <strong>'+escapeHtml(s.descrizione||'Sospeso')+'</strong>'+(s.bonifico?' \ud83c\udfe6':'')+'</div>'+
+        '<div class="riep-sub">residuo <strong class="mono">'+fmtEUR(saldoSospeso(s))+'</strong> su '+fmtEUR(s.importoIniziale)+(extra?' \u00b7 '+extra:'')+'</div>'+
+      '</div>';
+    }).join('') : '<div class="meta-line">Nessun sospeso aperto.</div>';
+    var pag = [];
+    miei.forEach(function(s){ (s.pagamenti||[]).forEach(function(p){ pag.push({p:p, s:s}); }); });
+    pag.sort(function(a,b){ return a.p.data<b.p.data?1:(a.p.data>b.p.data?-1:0); });
+    var totPagato = pag.reduce(function(a,x){return a+x.p.importo;},0);
+    var residuo = aperti.reduce(function(a,s){return a+saldoSospeso(s);},0);
+    var righePag = pag.length ?
+      '<div class="pay-table"><div class="pay-head"><span>Data</span><span>Per</span><span>Metodo</span><span class="r">Importo</span></div>'+
+      pag.slice(0,5).map(function(x){
+        return '<div class="pay-row"><span class="mono">'+fmtDate(x.p.data)+'</span><span class="pay-desc">'+escapeHtml(x.s.descrizione||'Sospeso')+'</span><span>'+(x.p.metodo&&METODI[x.p.metodo]?METODI[x.p.metodo]:'—')+'</span><span class="r pay-amt">+ '+fmtEUR(x.p.importo)+'</span></div>';
+      }).join('')+'</div>'+(pag.length>5?'<div class="meta-line">... e altri '+(pag.length-5)+' pagamenti nella scheda</div>':'')
+      : '<div class="meta-line">Nessun pagamento registrato.</div>';
+    var ultimoPag = pag.length ? pag[0].p.data : null;
+    var sol = ultimoSollecitoDettaglio(c.id);
+    var solTxt = sol ? 'ultimo sollecito il '+fmtDate(sol.data)+' ('+giorniDa(sol.data)+' gg fa) · '+ESITI_SOLLECITO[sol.esito]+(sol.nota?' · '+escapeHtml(sol.nota):'') : 'nessun sollecito registrato';
+    return '<div class="riepilogo-cliente" data-riep="'+c.id+'">'+
+      '<div class="riep-strip">'+
+        '<span class="riep-chip chip-red"><small>Da incassare</small><strong class="mono">'+fmtEUR(residuo)+'</strong></span>'+
+        '<span class="riep-chip chip-green"><small>Già versato</small><strong class="mono">'+fmtEUR(totPagato)+'</strong></span>'+
+        '<span class="riep-chip"><small>Ultimo pagamento</small><strong>'+(ultimoPag?fmtDate(ultimoPag)+' ('+giorniDa(ultimoPag)+' gg fa)':'mai')+'</strong></span>'+
+      '</div>'+
+      '<div class="riep-cols">'+
+        '<div class="riep-col"><div class="riep-title">Sospesi aperti</div>'+righeAperti+'</div>'+
+        '<div class="riep-col riep-col-pay"><div class="riep-title">Pagamenti recenti</div>'+righePag+'</div>'+
+      '</div>'+
+      '<div class="riep-foot"><span>🔔 '+solTxt+'</span>'+
+        (c.telefono?'<span>📞 <a href="tel:'+escapeHtml(c.telefono)+'">'+escapeHtml(c.telefono)+'</a></span>':'')+
+        (c.note?'<span>📝 '+escapeHtml(c.note)+'</span>':'')+
+        '<button class="btn small" data-apri="'+c.id+'" style="margin-left:auto;">Apri scheda completa</button></div>'+
+    '</div>';
+  }
+  function wireRighe(){
+    document.querySelectorAll('[data-riga]').forEach(function(b){
+      b.onclick=function(){
+        var id=b.getAttribute('data-riga');
+        state.expandedClienteId = (state.expandedClienteId===id) ? null : id;
+        renderListaClienti();
+        focusRiga(id);
+      };
+    });
+    document.querySelectorAll('[data-apri]').forEach(function(b){
+      b.onclick=function(e){ e.stopPropagation(); state.selectedClienteId=b.getAttribute('data-apri'); state.view='cliente'; render(); };
+    });
+  }
+  function focusRiga(id){
+    var el = document.querySelector('[data-riga="'+id+'"]');
+    if(el){ try{ el.focus({preventScroll:true}); }catch(e){ el.focus(); } if(el.scrollIntoView) el.scrollIntoView({block:'nearest'}); }
+  }
+  if(!window.__righeKeys){
+    window.__righeKeys = true;
+    document.addEventListener('keydown', function(e){
+      if(state.view!=='clienti') return;
+      if(e.key!=='ArrowDown' && e.key!=='ArrowUp' && e.key!=='Escape') return;
+      var t = e.target, tag = t && t.tagName ? t.tagName.toLowerCase() : '';
+      if(tag==='input'||tag==='textarea'||tag==='select') return;
+      var righe = Array.prototype.slice.call(document.querySelectorAll('[data-riga]'));
+      if(!righe.length) return;
+      var onRiga = t && t.getAttribute && t.getAttribute('data-riga');
+      if(e.key==='Escape'){ if(state.expandedClienteId){ state.expandedClienteId=null; renderListaClienti(); } return; }
+      if(!state.expandedClienteId && !onRiga) return;
+      var ids = righe.map(function(r){return r.getAttribute('data-riga');});
+      var corr = onRiga || state.expandedClienteId;
+      var i = ids.indexOf(corr); if(i<0) i = 0;
+      var j = e.key==='ArrowDown' ? Math.min(i+1, ids.length-1) : Math.max(i-1, 0);
+      e.preventDefault();
+      state.expandedClienteId = ids[j];
+      renderListaClienti();
+      focusRiga(ids[j]);
+    });
   }
 
   function renderClienti(){
@@ -531,13 +638,13 @@
         '<div class="sospeso-section"><div class="sospeso-section-head"><h3>Dilazioni brevi ('+dilaz.length+')</h3></div>'+(dilaz.length?dilaz.map(renderRigaCliente).join(''):'<div class="sospeso-section-empty">Nessun cliente con dilazioni brevi aperte</div>')+'</div>'+
         '<div class="sospeso-section"><div class="sospeso-section-head"><h3>Finanziamenti a rate ('+finan.length+')</h3></div>'+(finan.length?finan.map(renderRigaCliente).join(''):'<div class="sospeso-section-empty">Nessun cliente con finanziamenti a rate aperti</div>')+'</div>'+
       '</div>';
-      document.querySelectorAll('[data-cliente]').forEach(function(b){ b.onclick=function(){ state.selectedClienteId=b.getAttribute('data-cliente'); state.view='cliente'; render(); }; });
+      wireRighe();
       return;
     }
     var list = base.sort(compareClienti);
     if(!list.length){ el.innerHTML='<div class="empty-state">'+(state.clienti.length===0?'Nessun sospeso ancora registrato. Aggiungi il primo cliente.':'Nessun cliente corrisponde alla ricerca.')+'</div>'; return; }
     el.innerHTML = list.map(renderRigaCliente).join('');
-    document.querySelectorAll('[data-cliente]').forEach(function(b){ b.onclick=function(){ state.selectedClienteId=b.getAttribute('data-cliente'); state.view='cliente'; render(); }; });
+    wireRighe();
   }
 
   function renderFormCliente(){
