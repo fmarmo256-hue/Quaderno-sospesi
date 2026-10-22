@@ -65,6 +65,8 @@
   .empty-state{color:var(--ink-soft); font-size:14px; padding:30px 0; text-align:center;}
   .row-btn{position:relative; overflow:hidden; display:flex; justify-content:space-between; align-items:center; gap:12px; width:100%; text-align:left; background:#fffdf7; border:1px solid var(--paper-line); border-left:4px solid var(--gold); padding:12px 14px; border-radius:3px; cursor:pointer;}
   .row-btn:hover{background:#f7f2e6;}
+  .dup-warn{background:#fdf1d8; border:1px solid #d9b45a; border-left:4px solid #c98a1b; border-radius:3px; padding:10px 12px; margin:10px 0; font-size:13px;}
+  .dup-row{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; padding:6px 0; border-top:1px dotted #d9b45a; margin-top:6px;}
   .row-btn:focus-visible{outline:2px solid var(--gold); outline-offset:1px;}
   .row-btn[aria-expanded="true"]{background:#f7f2e6;}
   .riepilogo-cliente{background:#fbf7ec; border:1px solid var(--paper-line); border-left:3px solid var(--gold); border-radius:0 0 4px 4px; padding:10px 14px 10px; margin:-1px 0 12px 0; font-size:13px; color:var(--ink-soft);}
@@ -179,9 +181,23 @@
     editClienteOpen: false,
     search: '', filter: 'tutti', sortBy: 'apertura_asc', sortMenuOpen: false,
     viewMode: 'per-tipo', viewMenuOpen: false,
-    overduePanelOpen: false, bonificoPanelOpen: false, expandedClienteId: null, authError: ''
+    overduePanelOpen: false, bonificoPanelOpen: false, expandedClienteId: null, dupMatches: null, dupConfirmed: false, authError: ''
   };
 
+  function normNome(x){ return (x||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
+  function normTel(t){ var d=(t||'').toString().replace(/\D/g,''); if(d.indexOf('0039')===0) d=d.slice(4); else if(d.indexOf('39')===0 && d.length>10) d=d.slice(2); return d; }
+  function trovaDuplicati(nome,cognome,telefono){
+    var n1=normNome(nome+' '+cognome), n2=normNome(cognome+' '+nome), tel=normTel(telefono), out=[];
+    state.clienti.forEach(function(c){
+      var motivi=[];
+      var nc=normNome(c.nome+' '+c.cognome);
+      if(n1 && (nc===n1 || nc===n2)) motivi.push('stesso nome e cognome');
+      var tc=normTel(c.telefono);
+      if(tel.length>=6 && tc && tc===tel) motivi.push('stesso numero di telefono');
+      if(motivi.length) out.push({c:c, motivi:motivi});
+    });
+    return out;
+  }
   function nomeCompleto(c){ return (c.nome||'')+(c.cognome?' '+c.cognome:''); }
   function isAdmin(){ return !!(state.profile && state.profile.is_admin); }
   function currentName(){ return state.profile ? state.profile.nome : ''; }
@@ -661,12 +677,22 @@
         '<div class="field"><label class="field-label">Indirizzo</label><input type="text" id="cIndirizzo" value="'+escapeHtml(d.indirizzo)+'"></div></div>'+
         '<div class="field-row"><div class="field"><label class="field-label">Fatturazione</label><input type="text" id="cFatturazione" value="'+escapeHtml(d.fatturazione)+'"></div></div>'+
         '<div class="field-row"><div class="field"><label class="field-label">Nota sul cliente</label><input type="text" id="cNote" value="'+escapeHtml(d.note)+'"></div></div>' : '')+
+      (state.dupMatches && state.dupMatches.length ?
+        '<div class="dup-warn"><strong>\u26a0 Attenzione: esiste gi\u00e0 un cliente simile</strong>'+
+        state.dupMatches.map(function(m){
+          var sal=saldoCliente(m.c.id);
+          return '<div class="dup-row"><span><strong>'+escapeHtml(nomeCompleto(m.c))+'</strong>'+(m.c.telefono?' \u00b7 \ud83d\udcde '+escapeHtml(m.c.telefono):'')+' \u00b7 saldo '+fmtEUR(sal)+'<div class="meta-line">'+m.motivi.join(' e ')+'</div></span><button class="btn secondary small" data-dup-open="'+m.c.id+'">Apri questo cliente</button></div>';
+        }).join('')+
+        '<div class="meta-line" style="margin-top:8px;">Se \u00e8 una persona diversa puoi crearlo comunque.</div>'+
+        '<div class="panel-actions" style="margin-top:8px;"><button class="btn secondary" id="btnCreaComunque">Crea comunque</button></div></div>' : '')+
       (state.authError ? '<div class="error-msg">'+state.authError+'</div>' : '')+
       '<div class="panel-actions"><button class="btn secondary" id="btnAnnullaCliente">Annulla</button><button class="btn" id="btnSalvaCliente">Crea cliente</button></div>'+
     '</div>';
-    document.getElementById('cNome').oninput = function(e){ state.formClienteDraft.nome=e.target.value; };
-    document.getElementById('cCognome').oninput = function(e){ state.formClienteDraft.cognome=e.target.value; };
-    document.getElementById('cTelefono').oninput = function(e){ state.formClienteDraft.telefono=e.target.value; };
+    document.getElementById('cNome').oninput = function(e){ state.formClienteDraft.nome=e.target.value; state.dupConfirmed=false; };
+    document.getElementById('cCognome').oninput = function(e){ state.formClienteDraft.cognome=e.target.value; state.dupConfirmed=false; };
+    document.getElementById('cTelefono').oninput = function(e){ state.formClienteDraft.telefono=e.target.value; state.dupConfirmed=false; };
+    document.querySelectorAll('[data-dup-open]').forEach(function(b){ b.onclick=function(){ state.selectedClienteId=b.getAttribute('data-dup-open'); state.dupMatches=null; state.dupConfirmed=false; state.formClienteOpen=false; state.view='cliente'; render(); }; });
+    var bCom=document.getElementById('btnCreaComunque'); if(bCom) bCom.onclick=function(){ state.dupConfirmed=true; document.getElementById('btnSalvaCliente').click(); };
     if(state.formClienteAltriOpen){
       document.getElementById('cPaese').oninput=function(e){ state.formClienteDraft.paese=e.target.value; };
       document.getElementById('cIndirizzo').oninput=function(e){ state.formClienteDraft.indirizzo=e.target.value; };
@@ -674,11 +700,16 @@
       document.getElementById('cNote').oninput=function(e){ state.formClienteDraft.note=e.target.value; };
     }
     document.getElementById('toggleAltriDati').onclick = function(){ state.formClienteAltriOpen=!state.formClienteAltriOpen; renderFormCliente(); };
-    document.getElementById('btnAnnullaCliente').onclick = function(){ state.formClienteOpen=false; state.formClienteAltriOpen=false; state.formClienteDraft={nome:'',cognome:'',telefono:'',paese:'',indirizzo:'',fatturazione:'',note:''}; state.authError=''; renderFormCliente(); };
+    document.getElementById('btnAnnullaCliente').onclick = function(){ state.dupMatches=null; state.dupConfirmed=false; state.formClienteOpen=false; state.formClienteAltriOpen=false; state.formClienteDraft={nome:'',cognome:'',telefono:'',paese:'',indirizzo:'',fatturazione:'',note:''}; state.authError=''; renderFormCliente(); };
     document.getElementById('btnSalvaCliente').onclick = async function(){
       var d2 = state.formClienteDraft;
       state.authError='';
       if(!d2.nome.trim()){ state.authError='Inserisci il nome del cliente.'; return renderFormCliente(); }
+      if(!state.dupConfirmed){
+        var dup = trovaDuplicati(d2.nome, d2.cognome, d2.telefono);
+        if(dup.length){ state.dupMatches=dup; return renderFormCliente(); }
+      }
+      state.dupMatches=null; state.dupConfirmed=false;
       var ins = await sb.from('clienti').insert({
         nome:d2.nome.trim(), cognome:d2.cognome.trim(), telefono:d2.telefono.trim(), paese:d2.paese.trim(),
         indirizzo:d2.indirizzo.trim(), fatturazione:d2.fatturazione.trim(), note:d2.note.trim(), creato_da: currentName()
