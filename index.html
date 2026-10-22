@@ -256,6 +256,11 @@
   }
 
   // ---------- calcoli ----------
+  function pagamentiOrdinati(s, crescente){
+    var arr=(s.pagamenti||[]).map(function(p,i){return {p:p,i:i};});
+    arr.sort(function(a,b){ var d = a.p.data<b.p.data?-1:(a.p.data>b.p.data?1:0); if(d===0) d=a.i-b.i; return crescente?d:-d; });
+    return arr.map(function(x){return x.p;});
+  }
   function saldoSospeso(s){ var pagato=(s.pagamenti||[]).reduce(function(a,p){return a+p.importo;},0); return Math.max(s.importoIniziale-pagato,0); }
   function saldoCliente(clienteId){ return state.sospesi.filter(function(s){return s.clienteId===clienteId;}).reduce(function(a,s){return a+saldoSospeso(s);},0); }
   function ultimoPagamentoSospeso(s){ if(!s.pagamenti||!s.pagamenti.length) return null; return s.pagamenti.reduce(function(max,p){return (!max||p.data>max)?p.data:max;},null); }
@@ -742,7 +747,7 @@
         var saldo=saldoSospeso(s), pagato=(s.pagamenti||[]).reduce(function(a,p){return a+p.importo;},0);
         var head='<div class="print-row"><span>'+escapeHtml(s.descrizione||'Sospeso')+' (aperto il '+fmtDate(s.dataApertura)+(s.scadenza?', scad. '+fmtDate(s.scadenza):'')+')</span><span>'+fmtEUR(saldo)+' / '+fmtEUR(s.importoIniziale)+'</span></div>';
         var recap = pagato>0 ? '<div class="print-row" style="padding-left:14px; color:#555; font-style:italic;"><span>Pagato finora ('+(s.pagamenti||[]).length+' pagamenti)</span><span>'+fmtEUR(pagato)+'</span></div>' : '<div class="print-row" style="padding-left:14px; color:#555; font-style:italic;"><span>Nessun pagamento ricevuto finora</span><span></span></div>';
-        var pag = (s.pagamenti||[]).map(function(p){ return '<div class="print-row" style="padding-left:14px; color:#555;"><span>Pagamento '+fmtDate(p.data)+(p.metodo?' ('+p.metodo+')':'')+'</span><span>'+fmtEUR(p.importo)+'</span></div>'; }).join('');
+        var pag = pagamentiOrdinati(s,true).map(function(p){ return '<div class="print-row" style="padding-left:14px; color:#555;"><span>Pagamento '+fmtDate(p.data)+(p.metodo?' ('+p.metodo+')':'')+'</span><span>'+fmtEUR(p.importo)+'</span></div>'; }).join('');
         return head+recap+pag;
       }).join('');
       return '<h2>'+titolo+'</h2>'+righe;
@@ -950,7 +955,7 @@
     var percentuale = s.importoIniziale>0 ? Math.min(100, Math.round((pagatoFinora/s.importoIniziale)*100)) : 0;
     var giorniAperto = giorniDa(s.dataApertura);
     var numPagamenti = (s.pagamenti||[]).length;
-    var pagHtml = (s.pagamenti||[]).map(function(p){
+    var pagHtml = pagamentiOrdinati(s,true).map(function(p){
       return '<div class="pag-line">'+
         '<input type="date" value="'+(p.data||todayISO())+'" data-edit-data="'+s.id+'|'+p.id+'">'+
         '<select data-edit-metodo="'+s.id+'|'+p.id+'"><option value="" '+(!p.metodo?'selected':'')+'>\u2014</option>'+
